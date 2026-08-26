@@ -63,11 +63,11 @@ def live_search_web(query, max_results=15):
     results = []
     try:
         from duckduckgo_search import DDGS
-        # คลีนข้อความ ตัดคำกริยา/คำขยะออกเพื่อให้คำค้นหากระชับ
-        clean_query = query.replace("หา", "").replace("อยากได้", "").replace("ราคา", "").strip()
+        # ใช้คำค้นหาตามจริง พร้อมระบุขอบเขต Thailand เพื่อให้ได้ผลลัพธ์ภาษาไทยตรงจุด
+        search_query = f"{query.strip()} Thailand"
         
         with DDGS() as ddgs:
-            search_gen = ddgs.text(clean_query, region='th-th', max_results=max_results)
+            search_gen = ddgs.text(search_query, region='th-th', max_results=max_results)
             if search_gen:
                 for r in search_gen:
                     results.append({

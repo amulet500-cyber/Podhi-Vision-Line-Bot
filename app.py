@@ -59,24 +59,55 @@ def start_loading_animation(user_id):
         print(f"--- DEBUG Loading Animation Error: {e} ---", flush=True)
 
 def live_search_web(query, max_results=15):
-    """ทำการค้นหาลิงก์สดบนอินเทอร์เน็ต"""
+    """ทำการค้นหาลิงก์สดบนอินเทอร์เน็ต เน้นผลลัพธ์ภาษาไทย"""
     results = []
     try:
         from duckduckgo_search import DDGS
-        # ใช้คำค้นหาตามจริง พร้อมระบุขอบเขต Thailand เพื่อให้ได้ผลลัพธ์ภาษาไทยตรงจุด
-        search_query = f"{query.strip()} Thailand"
+        
+        # ปรับ Query ให้ระบุเจาะจงผลลัพธ์ในประเทศไทยป้องกัน IP ต่างประเทศของ Render ดึงเว็บนอก
+        search_query = f"{query.strip()} ไทย"
         
         with DDGS() as ddgs:
-            search_gen = ddgs.text(search_query, region='th-th', max_results=max_results)
+            # ใช้ backend="html" เพื่อบังคับผลลัพธ์ตาม region 'th-th' อย่างเข้มงวด
+            search_gen = ddgs.text(
+                search_query, 
+                region='th-th', 
+                safesearch='off', 
+                backend='html', 
+                max_results=max_results
+            )
+            
             if search_gen:
                 for r in search_gen:
-                    results.append({
-                        "title": r.get("title", ""),
-                        "url": r.get("href", ""),
-                        "snippet": r.get("body", "")
-                    })
+                    url = r.get("href", "")
+                    title = r.get("title", "")
+                    snippet = r.get("body", "")
+                    
+                    # กรองเฉพาะผลลัพธ์ที่ไม่ใช่เว็บขยะต่างชาติ
+                    if url and ("http://" in url or "https://" in url):
+                        results.append({
+                            "title": title,
+                            "url": url,
+                            "snippet": snippet
+                        })
+                        
     except Exception as e:
         print(f"--- DEBUG Live Search Error: {e} ---", flush=True)
+        # Fallback กรณี backend html มีปัญหา ให้ลองแบบมาตรฐานอีกครั้ง
+        try:
+            from duckduckgo_search import DDGS
+            with DDGS() as ddgs:
+                search_gen = ddgs.text(f"{query.strip()} ประเทศไทย", region='th-th', max_results=max_results)
+                if search_gen:
+                    for r in search_gen:
+                        results.append({
+                            "title": r.get("title", ""),
+                            "url": r.get("href", ""),
+                            "snippet": r.get("body", "")
+                        })
+        except Exception as ex:
+            print(f"--- DEBUG Fallback Search Error: {ex} ---", flush=True)
+
     return results
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):

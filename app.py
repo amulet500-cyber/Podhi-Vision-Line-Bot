@@ -57,6 +57,24 @@ def polish_with_hermes(topic_type, raw_text):
         prefix = "🔮 คำทำนาย: " if topic_type == "ดวงชะตา" else "☸️ ธรรมะเตือนใจ: "
         return f"{prefix}{raw_text}"
 
+def ask_hermes_general(user_msg):
+    """ส่งคำถามทั่วไปให้ Hermes 3 AI ประมวลผลและตอบกลับแบบอิสระ"""
+    try:
+        system_instruction = (
+            "คุณคือผู้ช่วย AI ของระบบ 'โพธิ Vision' ตอบคำถามอย่างสุภาพ อ่อนโยน มีเมตตา "
+            "กระชับ สละสลวย และให้ข้อคิดหรือคำตอบที่เป็นประโยชน์แก่ผู้ถาม"
+        )
+        response = client.chat.completions.create(
+            model="nousresearch/hermes-3-llama-3.1-405b:free",
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": user_msg}
+            ]
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return "ขออภัยครับ ขณะนี้ระบบประมวลผลขัดข้องชั่วคราว โปรดลองใหม่อีกครั้ง"
+
 @app.route("/", methods=['GET'])
 def health_check():
     return "Podhi Vision Bot with Hermes AI is running 24/7!", 200
@@ -82,11 +100,8 @@ def handle_message(event):
         raw_dhamma = random.choice(DHAMMA_LIST)
         reply_text = polish_with_hermes("ธรรมะเตือนใจ", raw_dhamma)
     else:
-        reply_text = (
-            "สวัสดีครับศิษย์พี่ 🙏 ยินดีต้อนรับสู่ โพธิ Vision บอตที่ปรึกษาธรรมะ & ทำนายดวง\n\n"
-            "📌 พิมพ์ 'ดูดวง' เพื่อสุ่มรับคำทำนายดวงชะตา\n"
-            "📌 พิมพ์ 'ธรรมะ' หรือ 'ข้อคิด' เพื่อรับข้อคิดเตือนใจ"
-        )
+        # คำถามทั่วไปทั้งหมด ส่งให้ Hermes 3 AI ตอบอิสระทันที
+        reply_text = ask_hermes_general(user_msg)
         
     line_bot_api.reply_message(
         event.reply_token,

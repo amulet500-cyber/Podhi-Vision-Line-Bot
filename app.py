@@ -19,13 +19,12 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# รายชื่อโมเดลฟรี OpenRouter ชุดปัจจุบันที่ใช้งานได้จริง
+# รายชื่อโมเดล OpenRouter ที่รองรับปัจจุบัน
 FREE_MODELS = [
-    "google/gemini-2.0-flash-exp:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-r1:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "mistralai/mistral-small-24b-instruct-2501:free"
+    "google/gemini-2.5-flash",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "openrouter/auto"
 ]
 
 # 🔮 คลังแก่นคำทำนายดวงชะตา
@@ -51,9 +50,9 @@ def ask_gemini(system_instruction, user_msg):
 
     try:
         genai.configure(api_key=api_key)
-        # ปรับเป็น gemini-2.0-flash ซึ่งเป็นรุ่นเสถียรปัจจุบัน
+        # ปรับตามคำแนะนำของ Google API Log
         model = genai.GenerativeModel(
-            model_name="gemini-2.0-flash",
+            model_name="gemini-2.5-flash",
             system_instruction=system_instruction
         )
         response = model.generate_content(user_msg)
@@ -165,7 +164,7 @@ def handle_message(event):
         raw_fortune = random.choice(FORTUNE_LIST)
         reply_text = polish_with_ai("ดวงชะตา", raw_fortune)
     elif any(keyword in user_msg for keyword in ["ธรรมะ", "เครียด", "ข้อคิด", "ธรรม"]):
-        raw_dhamma = random.choice(DHAMMA_LIST)
+        raw_dhamma = raw_fortune = random.choice(DHAMMA_LIST)
         reply_text = polish_with_ai("ธรรมะเตือนใจ", raw_dhamma)
     else:
         reply_text = ask_general_ai(user_msg)

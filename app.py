@@ -1,11 +1,16 @@
+import io
 import os
 import random
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import (
+    MessageEvent, TextMessage, TextSendMessage, 
+    ImageMessage
+)
 import google.generativeai as genai
 from openai import OpenAI
+from PIL import Image
 
 app = Flask(__name__)
 
@@ -19,12 +24,12 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# รายชื่อโมเดล OpenRouter ที่รองรับปัจจุบัน
+# รายชื่อโมเดล OpenRouter (เอา openrouter/auto ขึ้นก่อนเพื่อความเร็วสูงสุด)
 FREE_MODELS = [
-    "google/gemini-2.5-flash",
-    "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "openrouter/auto"
+    "openrouter/auto",
+    "google/gemini-2.0-flash-exp:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1:free"
 ]
 
 # 🔮 คลังแก่นคำทำนายดวงชะตา
@@ -41,8 +46,8 @@ DHAMMA_LIST = [
     "ความดีทำง่ายเมื่อใจพร้อม เริ่มต้นวันใหม่ด้วยสติ และการมีเมตตาต่อตนเองและผู้อื่น"
 ]
 
-def ask_gemini(system_instruction, user_msg):
-    """เรียกใช้ Gemini API เป็นตัวหลัก"""
+def ask_gemini(system_instruction, user_msg, image_bytes=None):
+    """เรียกใช้ Gemini API เป็นตัวหลัก (รองรับทั้ง ข้อความ และ รูปภาพ)"""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         print("--- DEBUG: GEMINI_API_KEY is MISSING in Render! ---", flush=True)
@@ -50,12 +55,17 @@ def ask_gemini(system_instruction, user_msg):
 
     try:
         genai.configure(api_key=api_key)
-        # ปรับตามคำแนะนำของ Google API Log
         model = genai.GenerativeModel(
             model_name="gemini-2.5-flash",
             system_instruction=system_instruction
         )
-        response = model.generate_content(user_msg)
+        
+        if image_bytes:
+            img = Image.open(io.BytesIO(image_bytes))
+            response = model.generate_content([user_msg or "ช่วยอธิบายรายละเอียด หรือวิเคราะห์สิ่งที่เห็นในภาพนี้ให้หน่อยครับ", img])
+        else:
+            response = model.generate_content(user_msg)
+            
         if response and response.text:
             print("--- DEBUG: Successfully generated with Gemini API ---", flush=True)
             return response.text.strip()
@@ -65,7 +75,7 @@ def ask_gemini(system_instruction, user_msg):
     return None
 
 def ask_openrouter(system_instruction, user_msg):
-    """เรียกใช้ OpenRouter เป็นระบบสำรอง (Fallback)"""
+    """เรียกใช้ OpenRouter เป็นระบบสำรอง (Fallback สำหรับข้อความ)"""
     api_key = os.getenv('OPENROUTER_API_KEY')
     if not api_key:
         print("--- DEBUG: OPENROUTER_API_KEY is MISSING in Render! ---", flush=True)
@@ -88,7 +98,7 @@ def ask_openrouter(system_instruction, user_msg):
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": user_msg}
                 ],
-                timeout=15
+                timeout=5  # กระชับเวลา Timeout ไม่ให้เกินขีดจำกัดของ LINE Webhook
             )
             if response and response.choices and len(response.choices) > 0:
                 text = response.choices[0].message.content
@@ -101,19 +111,20 @@ def ask_openrouter(system_instruction, user_msg):
 
     return None
 
-def generate_ai_response(system_instruction, user_msg):
+def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     print("--- DEBUG: Start AI Generation ---", flush=True)
     
     # 1. เรียก Gemini เป็นลำดับแรก
-    result = ask_gemini(system_instruction, user_msg)
+    result = ask_gemini(system_instruction, user_msg, image_bytes)
     if result:
         return result
 
-    # 2. หาก Gemini ไม่ตอบ ให้สลับมาใช้ OpenRouter
-    print("--- DEBUG: Gemini failed. Falling back to OpenRouter... ---", flush=True)
-    result = ask_openrouter(system_instruction, user_msg)
-    if result:
-        return result
+    # 2. หาก Gemini ไม่ตอบ และไม่มีรูปภาพ ให้สลับมาใช้ OpenRouter สำรองทันที
+    if not image_bytes:
+        print("--- DEBUG: Gemini failed. Falling back to OpenRouter... ---", flush=True)
+        result = ask_openrouter(system_instruction, user_msg)
+        if result:
+            return result
 
     return None
 
@@ -156,6 +167,7 @@ def callback():
         abort(400)
     return 'OK'
 
+# 📩 จัดการข้อความตัวอักษร
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_msg = event.message.text.strip()
@@ -164,11 +176,41 @@ def handle_message(event):
         raw_fortune = random.choice(FORTUNE_LIST)
         reply_text = polish_with_ai("ดวงชะตา", raw_fortune)
     elif any(keyword in user_msg for keyword in ["ธรรมะ", "เครียด", "ข้อคิด", "ธรรม"]):
-        raw_dhamma = raw_fortune = random.choice(DHAMMA_LIST)
+        raw_dhamma = random.choice(DHAMMA_LIST)  # แก้ไขบั๊กตัวแปรซ้อนเรียบร้อย
         reply_text = polish_with_ai("ธรรมะเตือนใจ", raw_dhamma)
     else:
         reply_text = ask_general_ai(user_msg)
         
+    line_bot_api.reply_message(
+        event.reply_token,
+        TextSendMessage(text=reply_text)
+    )
+
+# 🖼️ จัดการข้อความรูปภาพ (Vision)
+@handler.add(MessageEvent, message=ImageMessage)
+def handle_image(event):
+    try:
+        message_content = line_bot_api.get_message_content(event.message.id)
+        image_bytes = message_content.content
+
+        system_instruction = (
+            "คุณคือผู้ช่วย AI ของระบบ 'โพธิ Vision' ช่วยวิเคราะห์ หรืออธิบายรูปภาพที่ผู้ใช้ส่งมา "
+            "ตอบอย่างมีเมตตา สุภาพ สละสลวย และให้ข้อคิดธรรมะหรือประโยชน์ที่สอดคล้องกับภาพ"
+        )
+        
+        reply_text = generate_ai_response(
+            system_instruction=system_instruction, 
+            user_msg="ช่วยอธิบาย หรือวิเคราะห์สิ่งที่เห็นในภาพนี้ให้หน่อยครับ", 
+            image_bytes=image_bytes
+        )
+
+        if not reply_text:
+            reply_text = "ขออภัยครับ ไม่สามารถวิเคราะห์รูปภาพได้ในขณะนี้ โปรดลองใหม่อีกครั้ง"
+
+    except Exception as e:
+        print(f"--- DEBUG Image Handler Error: {e} ---", flush=True)
+        reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับ"
+
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=reply_text)

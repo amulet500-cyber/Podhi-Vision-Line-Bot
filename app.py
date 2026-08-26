@@ -17,10 +17,14 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# ตั้งค่า OpenRouter Client
+# ตั้งค่า OpenRouter Client พร้อมกำหนด HTTP Headers ที่จำเป็น
 client = OpenAI(
     base_url="https://openrouter.ai/api/v1",
     api_key=OPENROUTER_API_KEY,
+    default_headers={
+        "HTTP-Referer": "https://podhi-vision-line-bot-1.onrender.com",
+        "X-Title": "Podhi Vision Bot",
+    }
 )
 
 # 🔮 คลังแก่นคำทำนายดวงชะตา
@@ -54,6 +58,7 @@ def polish_with_hermes(topic_type, raw_text):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
+        print(f"--- OpenRouter Error (polish): {e} ---")
         prefix = "🔮 คำทำนาย: " if topic_type == "ดวงชะตา" else "☸️ ธรรมะเตือนใจ: "
         return f"{prefix}{raw_text}"
 
@@ -73,6 +78,7 @@ def ask_hermes_general(user_msg):
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
+        print(f"--- OpenRouter Error (general): {e} ---")
         return "ขออภัยครับ ขณะนี้ระบบประมวลผลขัดข้องชั่วคราว โปรดลองใหม่อีกครั้ง"
 
 @app.route("/", methods=['GET'])

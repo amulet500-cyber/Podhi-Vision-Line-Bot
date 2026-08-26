@@ -46,6 +46,7 @@ def ask_gemini(system_instruction, user_msg):
     """เรียกใช้ Gemini API เป็นตัวหลัก"""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
+        print("--- DEBUG: GEMINI_API_KEY is MISSING in Render! ---", flush=True)
         return None
 
     try:
@@ -56,10 +57,10 @@ def ask_gemini(system_instruction, user_msg):
         )
         response = model.generate_content(user_msg)
         if response and response.text:
-            print("--- Successfully generated with Gemini API ---")
+            print("--- DEBUG: Successfully generated with Gemini API ---", flush=True)
             return response.text.strip()
     except Exception as e:
-        print(f"--- Gemini API Error: {type(e).__name__} -> {e} ---")
+        print(f"--- DEBUG Gemini Error: {type(e).__name__} -> {e} ---", flush=True)
         
     return None
 
@@ -67,6 +68,7 @@ def ask_openrouter(system_instruction, user_msg):
     """เรียกใช้ OpenRouter เป็นระบบสำรอง (Fallback)"""
     api_key = os.getenv('OPENROUTER_API_KEY')
     if not api_key:
+        print("--- DEBUG: OPENROUTER_API_KEY is MISSING in Render! ---", flush=True)
         return None
 
     client = OpenAI(
@@ -91,23 +93,25 @@ def ask_openrouter(system_instruction, user_msg):
             if response and response.choices and len(response.choices) > 0:
                 text = response.choices[0].message.content
                 if text:
-                    print(f"--- Successfully generated with OpenRouter model: {model_name} ---")
+                    print(f"--- DEBUG: Successfully generated with OpenRouter: {model_name} ---", flush=True)
                     return text.strip()
         except Exception as e:
-            print(f"--- OpenRouter Model {model_name} Error: {type(e).__name__} -> {e} ---")
+            print(f"--- DEBUG OpenRouter {model_name} Error: {type(e).__name__} -> {e} ---", flush=True)
             continue
 
     return None
 
 def generate_ai_response(system_instruction, user_msg):
     """ระบบเลือก AI: ลอง Gemini ก่อน หากล้มเหลวจะสลับไป OpenRouter อัตโนมัติ"""
+    print("--- DEBUG: Start AI Generation ---", flush=True)
+    
     # 1. เรียก Gemini เป็นลำดับแรก
     result = ask_gemini(system_instruction, user_msg)
     if result:
         return result
 
     # 2. หาก Gemini ไม่ตอบ ให้สลับมาใช้ OpenRouter
-    print("--- Gemini failed/unavailable. Falling back to OpenRouter... ---")
+    print("--- DEBUG: Gemini failed. Falling back to OpenRouter... ---", flush=True)
     result = ask_openrouter(system_instruction, user_msg)
     if result:
         return result
@@ -115,7 +119,6 @@ def generate_ai_response(system_instruction, user_msg):
     return None
 
 def polish_with_ai(topic_type, raw_text):
-    """ส่งข้อความให้ AI เกลาสำนวนให้อ่อนโยน สละสลวย"""
     system_instruction = (
         f"คุณคือผู้เชี่ยวชาญด้านธรรมะและที่ปรึกษาชีวิต ช่วยนำแก่นเนื้อหา{topic_type}นี้ "
         "ไปเกลาสำนวนให้อ่อนโยน สละสลวย ฟังแล้วไพเราะ และเสริมสร้างกำลังใจ โดยยังคงสาระสำคัญเดิมไว้"
@@ -129,7 +132,6 @@ def polish_with_ai(topic_type, raw_text):
     return f"{prefix}{raw_text}"
 
 def ask_general_ai(user_msg):
-    """ส่งคำถามทั่วไปให้ AI ตอบกลับแบบอิสระ"""
     system_instruction = (
         "คุณคือผู้ช่วย AI ของระบบ 'โพธิ Vision' ตอบคำถามอย่างสุภาพ อ่อนโยน มีเมตตา "
         "กระชับ สละสลวย และให้ข้อคิดหรือคำตอบที่เป็นประโยชน์แก่ผู้ถาม"
@@ -143,7 +145,7 @@ def ask_general_ai(user_msg):
 
 @app.route("/", methods=['GET'])
 def health_check():
-    return "Podhi Vision Bot (Gemini + OpenRouter Hybrid) is running 24/7!", 200
+    return "Podhi Vision Bot is running!", 200
 
 @app.route("/callback", methods=['POST'])
 def callback():

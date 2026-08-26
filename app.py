@@ -27,12 +27,13 @@ client = OpenAI(
     }
 )
 
-# รายชื่อโมเดลฟรีใน OpenRouter (ลำดับการทำงาน: ตัวหลัก -> สำรอง 1 -> สำรอง 2)
+# โมเดลฟรีที่ตอบเร็วและตอบรับคำขอเสถียรที่สุด
 FREE_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
     "google/gemma-2-9b-it:free",
-    "qwen/qwen-2.5-72b-instruct:free"
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free"
 ]
 
 # 🔮 คลังแก่นคำทำนายดวงชะตา
@@ -51,6 +52,10 @@ DHAMMA_LIST = [
 
 def generate_ai_response(system_prompt, user_prompt):
     """เรียกใช้ AI โดยลองทีละโมเดล หากโมเดลแรกติดคิวเต็ม จะข้ามไปโมเดลสำรองทันที"""
+    if not OPENROUTER_API_KEY:
+        print("--- ERROR: OPENROUTER_API_KEY is not set in Environment Variables ---")
+        return None
+
     for model_name in FREE_MODELS:
         try:
             response = client.chat.completions.create(
@@ -59,11 +64,15 @@ def generate_ai_response(system_prompt, user_prompt):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
                 ],
-                timeout=10
+                timeout=15
             )
-            return response.choices[0].message.content.strip()
+            if response and response.choices and len(response.choices) > 0:
+                text = response.choices[0].message.content
+                if text:
+                    print(f"--- Successfully generated with model: {model_name} ---")
+                    return text.strip()
         except Exception as e:
-            print(f"--- Model {model_name} failed: {e} ---")
+            print(f"--- Model {model_name} Error: {type(e).__name__} -> {e} ---")
             continue
             
     return None

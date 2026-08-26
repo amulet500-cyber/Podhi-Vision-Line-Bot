@@ -5,3 +5,5 @@ openai
 gunicorn
 python-dotenv
 Pillow
+duckduckgo_search
+requests

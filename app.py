@@ -63,14 +63,19 @@ def live_search_web(query, max_results=15):
     results = []
     try:
         from duckduckgo_search import DDGS
+        # ทำการคลีนข้อความ ตัดคำขยะเพื่อให้คำค้นหากระชับ ค้นหาแม่นยำขึ้น
+        clean_query = query.replace("หา", "").replace("อยากได้", "").replace("ราคา", "").strip()
+        
         with DDGS() as ddgs:
-            search_gen = ddgs.text(query, region='th-th', max_results=max_results)
-            for r in search_gen:
-                results.append({
-                    "title": r.get("title", ""),
-                    "url": r.get("href", ""),
-                    "snippet": r.get("body", "")
-                })
+            # ค้นหาด้วยคีย์เวิร์ดที่คลีนแล้ว
+            search_gen = ddgs.text(clean_query, region='th-th', max_results=max_results)
+            if search_gen:
+                for r in search_gen:
+                    results.append({
+                        "title": r.get("title", ""),
+                        "url": r.get("href", ""),
+                        "snippet": r.get("body", "")
+                    })
     except Exception as e:
         print(f"--- DEBUG Live Search Error: {e} ---", flush=True)
     return results

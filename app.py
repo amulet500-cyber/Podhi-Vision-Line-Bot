@@ -1,6 +1,7 @@
 import io
 import os
-import random
+import threading
+import requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -14,7 +15,7 @@ from PIL import Image
 
 app = Flask(__name__)
 
-# ดึงค่า Keys จากระบบ Render ผ่าน Environment Variables
+# ดึงค่า Keys จากระบบผ่าน Environment Variables
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
@@ -24,7 +25,7 @@ OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# รายชื่อโมเดล OpenRouter (เอา openrouter/auto ขึ้นก่อนเพื่อความเร็วสูงสุด)
+# รายชื่อโมเดล OpenRouter (สำรอง)
 FREE_MODELS = [
     "openrouter/auto",
     "google/gemini-2.0-flash-exp:free",
@@ -32,32 +33,59 @@ FREE_MODELS = [
     "deepseek/deepseek-r1:free"
 ]
 
-# 🔮 คลังแก่นคำทำนายดวงชะตา
-FORTUNE_LIST = [
-    "ช่วงนี้มีเกณฑ์ได้รับการสนับสนุนจากผู้ใหญ่ สิ่งที่ลงมือทำด้วยความเพียรจะเริ่มเห็นผลสำเร็จ",
-    "ให้ระวังเรื่องการใช้จ่ายและสติในการตัดสินใจ แต่จะมีโชคลาภเล็กๆ น้อยๆ จากการเดินทาง",
-    "เป็นช่วงเวลาที่ดีในการเริ่มต้นเรียนรู้สิ่งใหม่ ความคิดสร้างสรรค์แจ่มใส เหมาะแก่การลงมือทำโครงการใหม่"
+# 🏷️ คลังคำสำหรับคัดกรองหมวดอสังหาริมทรัพย์ พระเครื่อง และการซื้อขายเช่า
+SEARCH_KEYWORDS = [
+    "พระเครื่อง", "พระ", "เช่าพระ", "ปล่อยพระ", "ส่องพระ", "เหรียญหลวงพ่อ",
+    "ตึก", "อาคาร", "ตึกแถว", "อาคารพานิชย์", "บ้าน", "บ้านเดี่ยว", "ทาวน์เฮาส์", 
+    "คอนโด", "ที่ดิน", "ที่ดินเปล่า", "อสังหา", "อสังหาริมทรัพย์", 
+    "ซื้อขาย", "ขายเช่า", "ให้เช่า", "ขายบ้าน", "ขายที่ดิน", "ฝากขาย", 
+    "ทำเล", "ห้องชุด", "ที่หลุดจำนอง"
 ]
 
-# ☸️ คลังแก่นข้อคิดธรรมะเตือนใจ
-DHAMMA_LIST = [
-    "สพฺเพ ธมฺมา นาลํ อภินิเวสาย - สิ่งทั้งหลายทั้งปวงไม่ควรยึดมั่นถือมั่น ปล่อยวางได้ ใจก็เป็นสุข",
-    "โกรธเขา เหมือนจุดไฟเผาตัวเอง เมื่อมีเรื่องร้อนใจ ให้กลับมาอยู่กับลมหายใจเข้าออก",
-    "ความดีทำง่ายเมื่อใจพร้อม เริ่มต้นวันใหม่ด้วยสติ และการมีเมตตาต่อตนเองและผู้อื่น"
-]
+def start_loading_animation(user_id):
+    """เรียกใช้ LINE API เปิดหลอดหมวดจุดไข่ปลา (Loading Animation) สูงสุด 60 วินาที ฟรีไม่เสียโควตา"""
+    try:
+        url = "https://api.line.me/v2/bot/chat/loading/start"
+        headers = {
+            "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "chatId": user_id,
+            "loadingSeconds": 60
+        }
+        requests.post(url, headers=headers, json=data, timeout=5)
+    except Exception as e:
+        print(f"--- DEBUG Loading Animation Error: {e} ---", flush=True)
+
+def live_search_web(query, max_results=15):
+    """ทำการค้นหาลิงก์สดบนอินเทอร์เน็ต"""
+    results = []
+    try:
+        from duckduckgo_search import DDGS
+        with DDGS() as ddgs:
+            search_gen = ddgs.text(query, region='th-th', max_results=max_results)
+            for r in search_gen:
+                results.append({
+                    "title": r.get("title", ""),
+                    "url": r.get("href", ""),
+                    "snippet": r.get("body", "")
+                })
+    except Exception as e:
+        print(f"--- DEBUG Live Search Error: {e} ---", flush=True)
+    return results
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
-    """เรียกใช้ Gemini API เป็นตัวหลัก (รองรับทั้ง ข้อความ และ รูปภาพ)"""
+    """เรียกใช้ Gemini API เป็นตัวหลัก"""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        print("--- DEBUG: GEMINI_API_KEY is MISSING in Render! ---", flush=True)
+        print("--- DEBUG: GEMINI_API_KEY is MISSING! ---", flush=True)
         return None
 
     try:
         genai.configure(api_key=api_key)
-        # ปรับรุ่นโมเดลหลักเป็น gemini-3.6-flash ตามที่ Google API แนะนำ
         model = genai.GenerativeModel(
-            model_name="gemini-3.6-flash",
+            model_name="gemini-2.0-flash",
             system_instruction=system_instruction
         )
         
@@ -68,7 +96,6 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
             response = model.generate_content(user_msg)
             
         if response and response.text:
-            print("--- DEBUG: Successfully generated with Gemini API ---", flush=True)
             return response.text.strip()
     except Exception as e:
         print(f"--- DEBUG Gemini Error: {type(e).__name__} -> {e} ---", flush=True)
@@ -76,10 +103,9 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
     return None
 
 def ask_openrouter(system_instruction, user_msg):
-    """เรียกใช้ OpenRouter เป็นระบบสำรอง (Fallback สำหรับข้อความ)"""
+    """เรียกใช้ OpenRouter เป็นระบบสำรอง"""
     api_key = os.getenv('OPENROUTER_API_KEY')
     if not api_key:
-        print("--- DEBUG: OPENROUTER_API_KEY is MISSING in Render! ---", flush=True)
         return None
 
     client = OpenAI(
@@ -99,59 +125,79 @@ def ask_openrouter(system_instruction, user_msg):
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": user_msg}
                 ],
-                timeout=5  # กระชับเวลา Timeout ไม่ให้เกินขีดจำกัดของ LINE Webhook
+                timeout=5
             )
             if response and response.choices and len(response.choices) > 0:
                 text = response.choices[0].message.content
                 if text:
-                    print(f"--- DEBUG: Successfully generated with OpenRouter: {model_name} ---", flush=True)
                     return text.strip()
         except Exception as e:
-            print(f"--- DEBUG OpenRouter {model_name} Error: {type(e).__name__} -> {e} ---", flush=True)
             continue
 
     return None
 
 def generate_ai_response(system_instruction, user_msg, image_bytes=None):
-    print("--- DEBUG: Start AI Generation ---", flush=True)
-    
-    # 1. เรียก Gemini เป็นลำดับแรก
     result = ask_gemini(system_instruction, user_msg, image_bytes)
     if result:
         return result
 
-    # 2. หาก Gemini ไม่ตอบ และไม่มีรูปภาพ ให้สลับมาใช้ OpenRouter สำรองทันที
     if not image_bytes:
-        print("--- DEBUG: Gemini failed. Falling back to OpenRouter... ---", flush=True)
         result = ask_openrouter(system_instruction, user_msg)
         if result:
             return result
 
     return None
 
-def polish_with_ai(topic_type, raw_text):
+def format_links_with_ai(query, raw_results):
+    """ให้ AI สกัดจัดรูปแบบ 'ชื่อประกาศ + (ราคา/จุดเด่น) + ลิงก์' บรรทัดเดียวต่อรายการ"""
+    if not raw_results:
+        return f"ขออภัยครับ ศิษย์น้องไม่พบลิงก์ประกาศที่เกี่ยวข้องกับ '{query}' ในขณะนี้"
+
+    text_block = "\n".join([f"- {r['title']} | {r['snippet']} | URL: {r['url']}" for r in raw_results])
+    
     system_instruction = (
-        f"คุณคือผู้เชี่ยวชาญด้านธรรมะและที่ปรึกษาชีวิต ช่วยนำแก่นเนื้อหา{topic_type}นี้ "
-        "ไปเกลาสำนวนให้อ่อนโยน สละสลวย ฟังแล้วไพเราะ และเสริมสร้างกำลังใจ โดยยังคงสาระสำคัญเดิมไว้"
+        "คุณคือผู้ช่วยสรุปรายการประกาศอสังหาริมทรัพย์และพระเครื่อง "
+        "คัดเลือกเฉพาะลิงก์ที่ตรงประเด็นและห้ามแก้ไขโครงสร้าง URL เด็ดขาด "
+        "จัดรูปแบบให้อ่านง่ายบนมือถือตามโครงสร้างนี้เท่านั้น:\n"
+        "🔎 รวมลิงก์ประกาศ '[คีย์เวิร์ด]' ที่พบครับ:\n\n"
+        "1. ชื่อประกาศสั้นๆ (ราคาหรือทำเลถ้ามี)\n👉 ลิงก์\n\n"
+        "2. ชื่อประกาศสั้นๆ (ราคาหรือทำเลถ้ามี)\n👉 ลิงก์"
     )
-    result = generate_ai_response(system_instruction, f"แก่นเนื้อหา: {raw_text}")
     
-    if result:
-        return result
+    prompt = f"หัวข้อการค้นหา: {query}\n\nรายการข้อมูลดิบที่ค้นพบ:\n{text_block}"
+    formatted = generate_ai_response(system_instruction, prompt)
     
-    prefix = "🔮 คำทำนาย: " if topic_type == "ดวงชะตา" else "☸️ ธรรมะเตือนใจ: "
-    return f"{prefix}{raw_text}"
+    if formatted:
+        return formatted
+
+    # สำรองกรณี AI จัดรูปแบบไม่สำเร็จ ให้แสดงแบบดิบกระชับ
+    lines = [f"🔎 รวมลิงก์ประกาศ '{query}' ที่พบครับ:\n"]
+    for i, r in enumerate(raw_results, 1):
+        lines.append(f"{i}. {r['title']}\n👉 {r['url']}")
+    return "\n\n".join(lines)
+
+def async_search_and_push(user_id, query):
+    """กระบวนการค้นหาหลังบ้าน (Async Thread) เพื่อไม่ให้ชน Timeout 5 วินาที"""
+    start_loading_animation(user_id)
+    raw_results = live_search_web(query, max_results=15)
+    reply_text = format_links_with_ai(query, raw_results)
+    
+    try:
+        line_bot_api.push_message(
+            user_id,
+            TextSendMessage(text=reply_text)
+        )
+    except Exception as e:
+        print(f"--- DEBUG Push Message Error: {e} ---", flush=True)
 
 def ask_general_ai(user_msg):
     system_instruction = (
-        "คุณคือผู้ช่วย AI ของระบบ 'โพธิ Vision' ตอบคำถามอย่างสุภาพ อ่อนโยน มีเมตตา "
-        "กระชับ สละสลวย และให้ข้อคิดหรือคำตอบที่เป็นประโยชน์แก่ผู้ถาม"
+        "คุณคือผู้ช่วย AI ของระบบ 'โพธิ Vision' ตอบคำถามทั่วไปอย่างสุภาพ อ่อนโยน มีเมตตา "
+        "กระชับ สละสลวย และให้ข้อมูลที่เป็นประโยชน์แก่ผู้ถาม"
     )
     result = generate_ai_response(system_instruction, user_msg)
-    
     if result:
         return result
-        
     return "ขออภัยครับ ขณะนี้ระบบประมวลผลขัดข้องชั่วคราว โปรดลองใหม่อีกครั้ง"
 
 @app.route("/", methods=['GET'])
@@ -172,20 +218,28 @@ def callback():
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_msg = event.message.text.strip()
-    
-    if any(keyword in user_msg for keyword in ["ดูดวง", "ทำนาย", "ดวง"]):
-        raw_fortune = random.choice(FORTUNE_LIST)
-        reply_text = polish_with_ai("ดวงชะตา", raw_fortune)
-    elif any(keyword in user_msg for keyword in ["ธรรมะ", "เครียด", "ข้อคิด", "ธรรม"]):
-        raw_dhamma = random.choice(DHAMMA_LIST)
-        reply_text = polish_with_ai("ธรรมะเตือนใจ", raw_dhamma)
-    else:
-        reply_text = ask_general_ai(user_msg)
+    user_id = event.source.user_id
+
+    # ตรวจสอบว่าเข้าเงื่อนไขคีย์เวิร์ด ซื้อ ขาย เช่า พระเครื่อง อสังหาฯ หรือไม่
+    is_search_query = any(keyword in user_msg for keyword in SEARCH_KEYWORDS)
+
+    if is_search_query:
+        # 1. ตอบรับทันทีเพื่อเคลียร์ Timeout 5 วินาทีของ LINE (ไม่เสียโควตา)
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=f"ศิษย์น้องรับเรื่อง '{user_msg}' แล้วครับ กำลังออกไปค้นหาลิงก์ให้อยู่ รอสักครู่นะครับ...")
+        )
         
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=reply_text)
-    )
+        # 2. แยก Thread สแกนค้นสดหลังบ้าน + ยิง Push Message คำตอบจริงกลับทีหลัง
+        threading.Thread(target=async_search_and_push, args=(user_id, user_msg)).start()
+        
+    else:
+        # พูดคุยทั่วไปกับ AI ตามปกติ
+        reply_text = ask_general_ai(user_msg)
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply_text)
+        )
 
 # 🖼️ จัดการข้อความรูปภาพ (Vision)
 @handler.add(MessageEvent, message=ImageMessage)
@@ -196,7 +250,7 @@ def handle_image(event):
 
         system_instruction = (
             "คุณคือผู้ช่วย AI ของระบบ 'โพธิ Vision' ช่วยวิเคราะห์ หรืออธิบายรูปภาพที่ผู้ใช้ส่งมา "
-            "ตอบอย่างมีเมตตา สุภาพ สละสลวย และให้ข้อคิดธรรมะหรือประโยชน์ที่สอดคล้องกับภาพ"
+            "เช่น พระเครื่อง อสังหาริมทรัพย์ สิ่งของ หรือสถานที่ ตอบอย่างสุภาพ สละสลวย และชัดเจน"
         )
         
         reply_text = generate_ai_response(

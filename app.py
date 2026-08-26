@@ -55,8 +55,9 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
 
     try:
         genai.configure(api_key=api_key)
+        # ปรับรุ่นโมเดลหลักเป็น gemini-3.6-flash ตามที่ Google API แนะนำ
         model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-3.6-flash",
             system_instruction=system_instruction
         )
         
@@ -176,7 +177,7 @@ def handle_message(event):
         raw_fortune = random.choice(FORTUNE_LIST)
         reply_text = polish_with_ai("ดวงชะตา", raw_fortune)
     elif any(keyword in user_msg for keyword in ["ธรรมะ", "เครียด", "ข้อคิด", "ธรรม"]):
-        raw_dhamma = random.choice(DHAMMA_LIST)  # แก้ไขบั๊กตัวแปรซ้อนเรียบร้อย
+        raw_dhamma = random.choice(DHAMMA_LIST)
         reply_text = polish_with_ai("ธรรมะเตือนใจ", raw_dhamma)
     else:
         reply_text = ask_general_ai(user_msg)

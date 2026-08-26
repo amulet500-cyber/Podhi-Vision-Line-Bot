@@ -63,11 +63,10 @@ def live_search_web(query, max_results=15):
     results = []
     try:
         from duckduckgo_search import DDGS
-        # ทำการคลีนข้อความ ตัดคำขยะเพื่อให้คำค้นหากระชับ ค้นหาแม่นยำขึ้น
+        # คลีนข้อความ ตัดคำกริยา/คำขยะออกเพื่อให้คำค้นหากระชับ
         clean_query = query.replace("หา", "").replace("อยากได้", "").replace("ราคา", "").strip()
         
         with DDGS() as ddgs:
-            # ค้นหาด้วยคีย์เวิร์ดที่คลีนแล้ว
             search_gen = ddgs.text(clean_query, region='th-th', max_results=max_results)
             if search_gen:
                 for r in search_gen:
@@ -154,30 +153,30 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     return None
 
 def format_links_with_ai(query, raw_results):
-    """ให้ AI สกัดจัดรูปแบบ 'ชื่อประกาศ + (ราคา/จุดเด่น) + ลิงก์' บรรทัดเดียวต่อรายการ"""
+    """ให้ AI สกัดจัดรูปแบบ 'ชื่อประกาศ + ลิงก์'"""
     if not raw_results:
         return f"ขออภัยครับ ศิษย์น้องไม่พบลิงก์ประกาศที่เกี่ยวข้องกับ '{query}' ในขณะนี้"
 
-    text_block = "\n".join([f"- {r['title']} | {r['snippet']} | URL: {r['url']}" for r in raw_results])
+    text_block = "\n".join([f"- {r['title']} | URL: {r['url']}" for r in raw_results[:5]])
     
     system_instruction = (
-        "คุณคือผู้ช่วยสรุปรายการประกาศอสังหาริมทรัพย์และพระเครื่อง "
-        "คัดเลือกเฉพาะลิงก์ที่ตรงประเด็นและห้ามแก้ไขโครงสร้าง URL เด็ดขาด "
-        "จัดรูปแบบให้อ่านง่ายบนมือถือตามโครงสร้างนี้เท่านั้น:\n"
-        "🔎 รวมลิงก์ประกาศ '[คีย์เวิร์ด]' ที่พบครับ:\n\n"
-        "1. ชื่อประกาศสั้นๆ (ราคาหรือทำเลถ้ามี)\n👉 ลิงก์\n\n"
-        "2. ชื่อประกาศสั้นๆ (ราคาหรือทำเลถ้ามี)\n👉 ลิงก์"
+        "คุณคือผู้ช่วยสรุปรายการประกาศ แสดงรายการลิงก์ทั้งหมดที่ได้รับมา ห้ามตัดลิงก์ทิ้ง "
+        "ห้ามตอบว่าไม่พบข้อมูล ให้แสดงรายการตามโครงสร้างนี้เท่านั้น:\n"
+        "🔎 รวมลิงก์ประกาศที่เกี่ยวข้องครับ:\n\n"
+        "1. [ชื่อประกาศสั้นๆ]\n👉 [URL]\n\n"
+        "2. [ชื่อประกาศสั้นๆ]\n👉 [URL]"
     )
     
-    prompt = f"หัวข้อการค้นหา: {query}\n\nรายการข้อมูลดิบที่ค้นพบ:\n{text_block}"
+    prompt = f"หัวข้อการค้นหา: {query}\n\nรายการข้อมูลดิบ:\n{text_block}"
     formatted = generate_ai_response(system_instruction, prompt)
     
-    if formatted:
+    # ถ้า AI ตอบกลับมาแบบปกติและไม่มีคำปฏิเสธ ให้ใช้ค่าจาก AI
+    if formatted and "ไม่พบ" not in formatted:
         return formatted
 
-    # สำรองกรณี AI จัดรูปแบบไม่สำเร็จ ให้แสดงแบบดิบกระชับ
-    lines = [f"🔎 รวมลิงก์ประกาศ '{query}' ที่พบครับ:\n"]
-    for i, r in enumerate(raw_results, 1):
+    # สำรอง: ดึง 5 ลิงก์แรกมาแสดงตรงๆ ป้องกัน AI ปฏิเสธข้อมูล
+    lines = [f"🔎 รวมลิงก์ประกาศที่พบสำหรับ '{query}' ครับ:\n"]
+    for i, r in enumerate(raw_results[:5], 1):
         lines.append(f"{i}. {r['title']}\n👉 {r['url']}")
     return "\n\n".join(lines)
 

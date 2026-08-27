@@ -1,6 +1,6 @@
 import io
 import os
-import re
+import urllib.parse
 import threading
 import requests
 from flask import Flask, request, abort
@@ -43,15 +43,6 @@ SEARCH_KEYWORDS = [
     "ทำเล", "ห้องชุด", "ที่หลุดจำนอง"
 ]
 
-# 🌐 โดเมนเป้าหมายภาษาไทย
-TARGET_DOMAINS = [
-    "ddproperty.com", "kaidee.com", "ennxo.com", "taladteedin.com", 
-    "propertyhub.in.th", "inno-home.com", "interhome.co.th", "baania.com", 
-    "tperty.com", "pantipmarket.com", "tb.co.th", "teedin108.com", 
-    "thaihometown.com", "uamulet.com", "g-pra.com", "thaprachan.com", 
-    "pralanna.com", "web-pra.com"
-]
-
 def start_loading_animation(user_id):
     """เปิดหลอดหมวดจุดไข่ปลา (Loading Animation)"""
     try:
@@ -68,51 +59,36 @@ def start_loading_animation(user_id):
     except Exception as e:
         print(f"--- DEBUG Loading Animation Error: {e} ---", flush=True)
 
-def live_search_web(query, max_results=5):
-    """ค้นหาลิงก์ตรงจาก Google Search โดยเน้นเว็บไทยที่กำหนด"""
-    results = []
+def generate_thai_search_links(query):
+    """สร้างรายการลิงก์ตรงค้นหาจากเว็บอสังหาริมทรัพย์และพระเครื่องชั้นนำของไทย"""
+    encoded_query = urllib.parse.quote(query.strip())
     
-    # 1. ลองใช้ googlesearch-python ค้นหา Google ประเทศไทย
-    try:
-        from googlesearch import search
-        search_query = f"{query.strip()} site:th OR site:ddproperty.com OR site:kaidee.com OR site:ennxo.com OR site:thaprachan.com OR site:uamulet.com"
+    # แยกประเภทคีย์เวิร์ด (พระเครื่อง หรือ อสังหาริมทรัพย์)
+    is_amulet = any(k in query for k in ["พระเครื่อง", "พระ", "เช่าพระ", "ปล่อยพระ", "ส่องพระ", "เหรียญหลวงพ่อ"])
+    
+    links = []
+    if is_amulet:
+        links = [
+            {"title": f"ค้นหา '{query}' บน ท่าพระจันทร์ดอทคอม (Thaprachan)", "url": f"https://www.thaprachan.com/search_amulet.php?keyword={encoded_query}"},
+            {"title": f"ค้นหา '{query}' บน Kaidee Amulet", "url": f"https://www.kaidee.com/c34-amulet/?q={encoded_query}"},
+            {"title": f"ค้นหา '{query}' บน Web-Pra (เว็บพระ)", "url": f"https://www.web-pra.com/auction/search?q={encoded_query}"},
+            {"title": f"ค้นหา '{query}' บน Ennxo Amulet", "url": f"https://www.ennxo.com/amulet?q={encoded_query}"},
+            {"title": f"ค้นหา '{query}' บน Google ประเทศไทย (ผลลัพธ์พระเครื่อง)", "url": f"https://www.google.co.th/search?q={encoded_query}+ site:thaprachan.com+OR+site:g-pra.com+OR+site:uamulet.com"}
+        ]
+    else:
+        links = [
+            {"title": f"ค้นหาประกาศ '{query}' บน DDproperty", "url": f"https://www.ddproperty.com/property-for-sale?freetext={encoded_query}"},
+            {"title": f"ค้นหาประกาศ '{query}' บน Kaidee Property", "url": f"https://www.kaidee.com/c16-property/?q={encoded_query}"},
+            {"title": f"ค้นหาประกาศ '{query}' บน Propertyhub", "url": f"https://propertyhub.in.th/ค้นหา/{encoded_query}"},
+            {"title": f"ค้นหาประกาศ '{query}' บน Ennxo Property", "url": f"https://www.ennxo.com/property?q={encoded_query}"},
+            {"title": f"ค้นหาประกาศ '{query}' บน Baania", "url": f"https://baania.com/th/search?q={encoded_query}"}
+        ]
         
-        # ค้นหาโดยระบุ lang='th'
-        search_results = search(search_query, num_results=10, lang="th")
+    lines = [f"🔎 รวมลิงก์ประกาศภาษาไทยที่เกี่ยวข้องครับ:\n"]
+    for i, item in enumerate(links, 1):
+        lines.append(f"{i}. {item['title']}\n👉 {item['url']}")
         
-        for url in search_results:
-            if any(block in url for block in ["google.", "youtube.", "facebook."]):
-                continue
-            
-            # สกัดชื่อเว็บสั้นๆ จาก URL
-            domain = url.split("//")[-1].split("/")[0].replace("www.", "")
-            results.append({
-                "title": f"ประกาศจากเว็บ {domain}",
-                "url": url
-            })
-            if len(results) >= max_results:
-                break
-    except Exception as e:
-        print(f"--- DEBUG googlesearch-python Error: {e} ---", flush=True)
-
-    # 2. กรณี googlesearch-python ติดปัญหา ใช้ DuckDuckGo ค้นหาคำไทยสั้นๆ สำรอง
-    if not results:
-        try:
-            from duckduckgo_search import DDGS
-            with DDGS() as ddgs:
-                ddg_res = ddgs.text(f"{query.strip()} ขาย เช่า ไทย", region="th-th", max_results=8)
-                if ddg_res:
-                    for r in ddg_res:
-                        url = r.get("href", "")
-                        title = r.get("title", "")
-                        if url and not any(b in url for b in ["wikipedia", "weather", "reddit", "skyward"]):
-                            results.append({"title": title, "url": url})
-                        if len(results) >= max_results:
-                            break
-        except Exception as ex:
-            print(f"--- DEBUG DDGS Fallback Error: {ex} ---", flush=True)
-
-    return results
+    return "\n\n".join(lines)
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     """เรียกใช้ Gemini API ทั่วไป"""
@@ -186,21 +162,10 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 
     return None
 
-def format_links(query, raw_results):
-    """จัดรูปแบบแสดงผลลิงก์"""
-    if not raw_results:
-        return f"ขออภัยครับ ศิษย์น้องไม่พบลิงก์ประกาศที่เกี่ยวข้องกับ '{query}' ในขณะนี้"
-
-    lines = [f"🔎 รวมลิงก์ประกาศที่เกี่ยวข้องครับ:\n"]
-    for i, r in enumerate(raw_results[:5], 1):
-        lines.append(f"{i}. {r['title']}\n👉 {r['url']}")
-    return "\n\n".join(lines)
-
 def async_search_and_push(user_id, query):
     """กระบวนการค้นหาหลังบ้าน (Async Thread)"""
     start_loading_animation(user_id)
-    raw_results = live_search_web(query, max_results=5)
-    reply_text = format_links(query, raw_results)
+    reply_text = generate_thai_search_links(query)
     
     try:
         line_bot_api.push_message(
@@ -250,7 +215,7 @@ def handle_message(event):
             TextSendMessage(text=f"ศิษย์น้องรับเรื่อง '{user_msg}' แล้วครับ กำลังออกไปค้นหาลิงก์ให้อยู่ รอสักครู่นะครับ...")
         )
         
-        # 2. แยก Thread สแกนค้นสดหลังบ้าน
+        # 2. แยก Thread สร้างลิงก์ตรงค้นหาเว็บไทยหลังบ้าน
         threading.Thread(target=async_search_and_push, args=(user_id, user_msg)).start()
         
     else:

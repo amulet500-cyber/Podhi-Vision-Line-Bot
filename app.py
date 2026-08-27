@@ -74,8 +74,6 @@ def search_google_custom_api(query):
         'key': api_key,
         'cx': cx,
         'q': query,
-        'gl': 'th',
-        'hl': 'th',
         'num': 5
     }
     
@@ -83,8 +81,14 @@ def search_google_custom_api(query):
         res = requests.get(url, params=params, timeout=10)
         data = res.json()
         
+        # 📌 พิมพ์ Debug ดูใน Logs ว่า Google ตอบอะไรกลับมา
+        print(f"--- DEBUG GOOGLE RESPONSE STATUS: {res.status_code} ---", flush=True)
+        if 'error' in data:
+            print(f"--- DEBUG GOOGLE ERROR DETAILS: {data['error']} ---", flush=True)
+
         items = data.get('items', [])
         if not items:
+            print(f"--- DEBUG: No items found for query '{query}' ---", flush=True)
             return None
             
         lines = [f"🔎 รวมลิงก์ประกาศที่ตรงที่สุดครับ:\n"]

@@ -1,6 +1,5 @@
 import io
 import os
-import re
 import threading
 import requests
 from flask import Flask, request, abort
@@ -43,15 +42,6 @@ SEARCH_KEYWORDS = [
     "ทำเล", "ห้องชุด", "ที่หลุดจำนอง"
 ]
 
-# 🌐 รายชื่อเว็บไซต์เป้าหมาย (Whitelist) ตามที่ศิษย์พี่ระบุ
-TARGET_DOMAINS = [
-    "inno-home.com", "ennxo.com", "interhome.co.th", "ddproperty.com", 
-    "taladteedin.com", "kasikornbank.com", "propertyhub.in.th", "baania.com", 
-    "tperty.com", "pantipmarket.com", "tb.co.th", "teedin108.com", 
-    "baanteedin108.com", "thaihometown.com", "kaidee.com",
-    "uamulet.com", "g-pra.com", "thaprachan.com", "pralanna.com", "web-pra.com"
-]
-
 def start_loading_animation(user_id):
     """เรียกใช้ LINE API เปิดหลอดหมวดจุดไข่ปลา (Loading Animation) สูงสุด 60 วินาที"""
     try:
@@ -68,59 +58,45 @@ def start_loading_animation(user_id):
     except Exception as e:
         print(f"--- DEBUG Loading Animation Error: {e} ---", flush=True)
 
-def live_search_web(query, max_results=15):
-    """ทำการค้นหาลิงก์สด เน้นสกัดจากรายชื่อเว็บไซต์ที่ศิษย์พี่กำหนด"""
-    results = []
-    
-    # สตรีม HTTP Header ป้องกันการโดนบล็อก
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'th-TH,th;q=0.9,en;q=0.8'
-    }
+def ask_gemini_with_search(query):
+    """ใช้ Gemini 2.0 Flash พร้อม Google Search Grounding เพื่อค้นหาประกาศเว็บไทย"""
+    api_key = os.getenv('GEMINI_API_KEY')
+    if not api_key:
+        return None
 
     try:
-        # ใช้ DuckDuckGo ค้นหาโดยพ่วง site: เจาะจงโดเมน Whitelist
-        from duckduckgo_search import DDGS
+        genai.configure(api_key=api_key)
         
-        # ค้นหารอบที่ 1: เจาะจงเว็บเป้าหมายไทย
-        search_query = f"{query.strip()} (site:ddproperty.com OR site:kaidee.com OR site:ennxo.com OR site:thaprachan.com OR site:uamulet.com OR site:g-pra.com OR site:web-pra.com OR site:taladteedin.com)"
+        # กำหนดคำสั่งให้ Gemini ทำการค้นหา และจัดรูปแบบเป็นลิงก์ภาษาไทย
+        system_instruction = (
+            "คุณคือผู้ช่วยค้นหาประกาศอสังหาริมทรัพย์และพระเครื่องในประเทศไทย "
+            "หน้าที่ของคุณคือค้นหาข้อมูลสดจากอินเทอร์เน็ตเกี่ยวกับคีย์เวิร์ดที่ได้รับ "
+            "โดยเน้นค้นหาจากเว็บไซต์ไทยชั้นนำ เช่น ddproperty, kaidee, ennxo, taladteedin, propertyhub, uamulet, thaprachan, g-pra, web-pra ฯลฯ\n\n"
+            "ให้สรุปรายการประกาศที่พบ 3 - 5 รายการ ในรูปแบบดังนี้เท่านั้น:\n"
+            "🔎 รวมลิงก์ประกาศที่เกี่ยวข้องครับ:\n\n"
+            "1. [ชื่อหัวข้อประกาศ]\n👉 [URL ลิงก์ตรงของประกาศนั้น]\n\n"
+            "2. [ชื่อหัวข้อประกาศ]\n👉 [URL ลิงก์ตรงของประกาศนั้น]\n\n"
+            "ห้ามใส่ข้อความเกริ่นหรือข้อความสรุปอื่นเพิ่มเติม ให้แสดงเฉพาะรายการลิงก์เท่านั้น"
+        )
+
+        model = genai.GenerativeModel(
+            model_name="gemini-2.0-flash",
+            system_instruction=system_instruction,
+            tools=[{"google_search": {}}]  # เปิดใช้ Google Search Grounding
+        )
         
-        with DDGS() as ddgs:
-            search_gen = ddgs.text(search_query, region='th-th', safesearch='off', max_results=max_results)
-            if search_gen:
-                for r in search_gen:
-                    url = r.get("href", "")
-                    title = r.get("title", "")
-                    snippet = r.get("body", "")
-                    if url:
-                        results.append({"title": title, "url": url, "snippet": snippet})
-                        
+        prompt = f"ค้นหาประกาศซื้อขายในไทยสำหรับ: {query}"
+        response = model.generate_content(prompt)
+        
+        if response and response.text:
+            return response.text.strip()
     except Exception as e:
-        print(f"--- DEBUG DDGS Search Error: {e} ---", flush=True)
-
-    # หากรอบแรกไม่ได้ผลลัพธ์ ให้ค้นหา Google HTML Direct (วิธีสำรองที่แม่นยำที่สุด)
-    if not results:
-        try:
-            google_url = f"https://www.google.co.th/search?q={requests.utils.quote(query.strip())}&hl=th&cr=countryTH"
-            resp = requests.get(google_url, headers=headers, timeout=5)
-            if resp.status_code == 200:
-                # ดึง URL จาก HTML หน้า Google
-                urls = re.findall(r'/url\?q=(https?://[^&]+)', resp.text)
-                for u in urls:
-                    if not any(block in u for block in ['google.com', 'youtube.com', 'support.google']):
-                        # ตรวจว่าเป็นเว็บตรงกับ Whitelist หรือไม่
-                        domain_match = any(domain in u for domain in TARGET_DOMAINS)
-                        title = u.split('/')[2] if domain_match else u
-                        results.append({"title": f"ประกาศจาก {title}", "url": u, "snippet": ""})
-                        if len(results) >= 5:
-                            break
-        except Exception as ex:
-            print(f"--- DEBUG Direct Google Fallback Error: {ex} ---", flush=True)
-
-    return results
+        print(f"--- DEBUG Gemini Search Grounding Error: {type(e).__name__} -> {e} ---", flush=True)
+        
+    return None
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
-    """เรียกใช้ Gemini API เป็นตัวหลัก"""
+    """เรียกใช้ Gemini API ทั่วไป"""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
         return None
@@ -191,22 +167,17 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 
     return None
 
-def format_links_with_ai(query, raw_results):
-    """จัดรูปแบบรายการ 'ชื่อประกาศ + ลิงก์'"""
-    if not raw_results:
-        return f"ขออภัยครับ ศิษย์น้องไม่พบลิงก์ประกาศที่ตรงเงื่อนไขเกี่ยวกับ '{query}' ในขณะนี้"
-
-    lines = [f"🔎 รวมลิงก์ประกาศที่เกี่ยวข้องครับ:\n"]
-    for i, r in enumerate(raw_results[:5], 1):
-        lines.append(f"{i}. {r['title']}\n👉 {r['url']}")
-    return "\n\n".join(lines)
-
 def async_search_and_push(user_id, query):
-    """กระบวนการค้นหาหลังบ้าน (Async Thread)"""
+    """กระบวนการค้นหาหลังบ้าน (Async Thread) ผ่าน Gemini Search Grounding"""
     start_loading_animation(user_id)
-    raw_results = live_search_web(query, max_results=15)
-    reply_text = format_links_with_ai(query, raw_results)
     
+    # 1. ใช้ Gemini 2.0 + Google Search Grounding ค้นหา
+    reply_text = ask_gemini_with_search(query)
+    
+    # 2. ถ้าหากเกิดข้อผิดพลาด ให้ตอบข้อความแจ้งเตือนสุภาพ
+    if not reply_text:
+        reply_text = f"ขออภัยครับ ศิษย์น้องไม่สามารถดึงข้อมูลประกาศสำหรับ '{query}' ได้ในขณะนี้ โปรดลองใหม่อีกครั้งครับ"
+
     try:
         line_bot_api.push_message(
             user_id,
@@ -255,7 +226,7 @@ def handle_message(event):
             TextSendMessage(text=f"ศิษย์น้องรับเรื่อง '{user_msg}' แล้วครับ กำลังออกไปค้นหาลิงก์ให้อยู่ รอสักครู่นะครับ...")
         )
         
-        # 2. แยก Thread สแกนค้นสดหลังบ้าน
+        # 2. แยก Thread สแกนค้นสดผ่าน Google Grounding หลังบ้าน
         threading.Thread(target=async_search_and_push, args=(user_id, user_msg)).start()
         
     else:

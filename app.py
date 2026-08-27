@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import threading
 import requests
 from flask import Flask, request, abort
@@ -33,7 +34,7 @@ FREE_MODELS = [
     "deepseek/deepseek-r1:free"
 ]
 
-# 🏷️ คลังคำสำหรับคัดกรองหมวดอสังหาริมทรัพย์ พระเครื่อง และการซื้อขายเช่า
+# 🏷️ คลังคำสำหรับคัดกรองหมวดอสังหาริมทรัพย์ และ พระเครื่อง
 SEARCH_KEYWORDS = [
     "พระเครื่อง", "พระ", "เช่าพระ", "ปล่อยพระ", "ส่องพระ", "เหรียญหลวงพ่อ",
     "ตึก", "อาคาร", "ตึกแถว", "อาคารพานิชย์", "บ้าน", "บ้านเดี่ยว", "ทาวน์เฮาส์", 
@@ -42,8 +43,17 @@ SEARCH_KEYWORDS = [
     "ทำเล", "ห้องชุด", "ที่หลุดจำนอง"
 ]
 
+# 🌐 รายชื่อเว็บไซต์เป้าหมาย (Whitelist) ตามที่ศิษย์พี่ระบุ
+TARGET_DOMAINS = [
+    "inno-home.com", "ennxo.com", "interhome.co.th", "ddproperty.com", 
+    "taladteedin.com", "kasikornbank.com", "propertyhub.in.th", "baania.com", 
+    "tperty.com", "pantipmarket.com", "tb.co.th", "teedin108.com", 
+    "baanteedin108.com", "thaihometown.com", "kaidee.com",
+    "uamulet.com", "g-pra.com", "thaprachan.com", "pralanna.com", "web-pra.com"
+]
+
 def start_loading_animation(user_id):
-    """เรียกใช้ LINE API เปิดหลอดหมวดจุดไข่ปลา (Loading Animation) สูงสุด 60 วินาที ฟรีไม่เสียโควตา"""
+    """เรียกใช้ LINE API เปิดหลอดหมวดจุดไข่ปลา (Loading Animation) สูงสุด 60 วินาที"""
     try:
         url = "https://api.line.me/v2/bot/chat/loading/start"
         headers = {
@@ -59,54 +69,53 @@ def start_loading_animation(user_id):
         print(f"--- DEBUG Loading Animation Error: {e} ---", flush=True)
 
 def live_search_web(query, max_results=15):
-    """ทำการค้นหาลิงก์สดบนอินเทอร์เน็ต เน้นผลลัพธ์ภาษาไทย"""
+    """ทำการค้นหาลิงก์สด เน้นสกัดจากรายชื่อเว็บไซต์ที่ศิษย์พี่กำหนด"""
     results = []
+    
+    # สตรีม HTTP Header ป้องกันการโดนบล็อก
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'th-TH,th;q=0.9,en;q=0.8'
+    }
+
     try:
+        # ใช้ DuckDuckGo ค้นหาโดยพ่วง site: เจาะจงโดเมน Whitelist
         from duckduckgo_search import DDGS
         
-        # ปรับ Query ให้ระบุเจาะจงผลลัพธ์ในประเทศไทยป้องกัน IP ต่างประเทศของ Render ดึงเว็บนอก
-        search_query = f"{query.strip()} ไทย"
+        # ค้นหารอบที่ 1: เจาะจงเว็บเป้าหมายไทย
+        search_query = f"{query.strip()} (site:ddproperty.com OR site:kaidee.com OR site:ennxo.com OR site:thaprachan.com OR site:uamulet.com OR site:g-pra.com OR site:web-pra.com OR site:taladteedin.com)"
         
         with DDGS() as ddgs:
-            # ใช้ backend="html" เพื่อบังคับผลลัพธ์ตาม region 'th-th' อย่างเข้มงวด
-            search_gen = ddgs.text(
-                search_query, 
-                region='th-th', 
-                safesearch='off', 
-                backend='html', 
-                max_results=max_results
-            )
-            
+            search_gen = ddgs.text(search_query, region='th-th', safesearch='off', max_results=max_results)
             if search_gen:
                 for r in search_gen:
                     url = r.get("href", "")
                     title = r.get("title", "")
                     snippet = r.get("body", "")
-                    
-                    # กรองเฉพาะผลลัพธ์ที่ไม่ใช่เว็บขยะต่างชาติ
-                    if url and ("http://" in url or "https://" in url):
-                        results.append({
-                            "title": title,
-                            "url": url,
-                            "snippet": snippet
-                        })
+                    if url:
+                        results.append({"title": title, "url": url, "snippet": snippet})
                         
     except Exception as e:
-        print(f"--- DEBUG Live Search Error: {e} ---", flush=True)
-        # Fallback กรณี backend html มีปัญหา ให้ลองแบบมาตรฐานอีกครั้ง
+        print(f"--- DEBUG DDGS Search Error: {e} ---", flush=True)
+
+    # หากรอบแรกไม่ได้ผลลัพธ์ ให้ค้นหา Google HTML Direct (วิธีสำรองที่แม่นยำที่สุด)
+    if not results:
         try:
-            from duckduckgo_search import DDGS
-            with DDGS() as ddgs:
-                search_gen = ddgs.text(f"{query.strip()} ประเทศไทย", region='th-th', max_results=max_results)
-                if search_gen:
-                    for r in search_gen:
-                        results.append({
-                            "title": r.get("title", ""),
-                            "url": r.get("href", ""),
-                            "snippet": r.get("body", "")
-                        })
+            google_url = f"https://www.google.co.th/search?q={requests.utils.quote(query.strip())}&hl=th&cr=countryTH"
+            resp = requests.get(google_url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                # ดึง URL จาก HTML หน้า Google
+                urls = re.findall(r'/url\?q=(https?://[^&]+)', resp.text)
+                for u in urls:
+                    if not any(block in u for block in ['google.com', 'youtube.com', 'support.google']):
+                        # ตรวจว่าเป็นเว็บตรงกับ Whitelist หรือไม่
+                        domain_match = any(domain in u for domain in TARGET_DOMAINS)
+                        title = u.split('/')[2] if domain_match else u
+                        results.append({"title": f"ประกาศจาก {title}", "url": u, "snippet": ""})
+                        if len(results) >= 5:
+                            break
         except Exception as ex:
-            print(f"--- DEBUG Fallback Search Error: {ex} ---", flush=True)
+            print(f"--- DEBUG Direct Google Fallback Error: {ex} ---", flush=True)
 
     return results
 
@@ -114,7 +123,6 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
     """เรียกใช้ Gemini API เป็นตัวหลัก"""
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        print("--- DEBUG: GEMINI_API_KEY is MISSING! ---", flush=True)
         return None
 
     try:
@@ -184,35 +192,17 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     return None
 
 def format_links_with_ai(query, raw_results):
-    """ให้ AI สกัดจัดรูปแบบ 'ชื่อประกาศ + ลิงก์'"""
+    """จัดรูปแบบรายการ 'ชื่อประกาศ + ลิงก์'"""
     if not raw_results:
-        return f"ขออภัยครับ ศิษย์น้องไม่พบลิงก์ประกาศที่เกี่ยวข้องกับ '{query}' ในขณะนี้"
+        return f"ขออภัยครับ ศิษย์น้องไม่พบลิงก์ประกาศที่ตรงเงื่อนไขเกี่ยวกับ '{query}' ในขณะนี้"
 
-    text_block = "\n".join([f"- {r['title']} | URL: {r['url']}" for r in raw_results[:5]])
-    
-    system_instruction = (
-        "คุณคือผู้ช่วยสรุปรายการประกาศ แสดงรายการลิงก์ทั้งหมดที่ได้รับมา ห้ามตัดลิงก์ทิ้ง "
-        "ห้ามตอบว่าไม่พบข้อมูล ให้แสดงรายการตามโครงสร้างนี้เท่านั้น:\n"
-        "🔎 รวมลิงก์ประกาศที่เกี่ยวข้องครับ:\n\n"
-        "1. [ชื่อประกาศสั้นๆ]\n👉 [URL]\n\n"
-        "2. [ชื่อประกาศสั้นๆ]\n👉 [URL]"
-    )
-    
-    prompt = f"หัวข้อการค้นหา: {query}\n\nรายการข้อมูลดิบ:\n{text_block}"
-    formatted = generate_ai_response(system_instruction, prompt)
-    
-    # ถ้า AI ตอบกลับมาแบบปกติและไม่มีคำปฏิเสธ ให้ใช้ค่าจาก AI
-    if formatted and "ไม่พบ" not in formatted:
-        return formatted
-
-    # สำรอง: ดึง 5 ลิงก์แรกมาแสดงตรงๆ ป้องกัน AI ปฏิเสธข้อมูล
-    lines = [f"🔎 รวมลิงก์ประกาศที่พบสำหรับ '{query}' ครับ:\n"]
+    lines = [f"🔎 รวมลิงก์ประกาศที่เกี่ยวข้องครับ:\n"]
     for i, r in enumerate(raw_results[:5], 1):
         lines.append(f"{i}. {r['title']}\n👉 {r['url']}")
     return "\n\n".join(lines)
 
 def async_search_and_push(user_id, query):
-    """กระบวนการค้นหาหลังบ้าน (Async Thread) เพื่อไม่ให้ชน Timeout 5 วินาที"""
+    """กระบวนการค้นหาหลังบ้าน (Async Thread)"""
     start_loading_animation(user_id)
     raw_results = live_search_web(query, max_results=15)
     reply_text = format_links_with_ai(query, raw_results)
@@ -259,13 +249,13 @@ def handle_message(event):
     is_search_query = any(keyword in user_msg for keyword in SEARCH_KEYWORDS)
 
     if is_search_query:
-        # 1. ตอบรับทันทีเพื่อเคลียร์ Timeout 5 วินาทีของ LINE (ไม่เสียโควตา)
+        # 1. ตอบรับทันทีเพื่อเคลียร์ Timeout 5 วินาทีของ LINE
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text=f"ศิษย์น้องรับเรื่อง '{user_msg}' แล้วครับ กำลังออกไปค้นหาลิงก์ให้อยู่ รอสักครู่นะครับ...")
         )
         
-        # 2. แยก Thread สแกนค้นสดหลังบ้าน + ยิง Push Message คำตอบจริงกลับทีหลัง
+        # 2. แยก Thread สแกนค้นสดหลังบ้าน
         threading.Thread(target=async_search_and_push, args=(user_id, user_msg)).start()
         
     else:

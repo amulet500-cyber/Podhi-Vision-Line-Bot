@@ -1,6 +1,5 @@
 import io
 import os
-import urllib.parse
 import threading
 import requests
 from flask import Flask, request, abort
@@ -21,6 +20,8 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+GOOGLE_SEARCH_API_KEY = os.getenv('GOOGLE_SEARCH_API_KEY')
+SEARCH_ENGINE_ID = os.getenv('SEARCH_ENGINE_ID')
 
 # ตั้งค่า LINE SDK
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
@@ -59,36 +60,43 @@ def start_loading_animation(user_id):
     except Exception as e:
         print(f"--- DEBUG Loading Animation Error: {e} ---", flush=True)
 
-def generate_thai_search_links(query):
-    """สร้างรายการลิงก์ตรงค้นหาจากเว็บอสังหาริมทรัพย์และพระเครื่องชั้นนำของไทย"""
-    encoded_query = urllib.parse.quote(query.strip())
+def search_google_custom_api(query):
+    """ค้นหาผ่าน Google Custom Search API เพื่อเอาลิงก์ตรงและหัวข้อประกาศจริงในไทย"""
+    api_key = os.getenv('GOOGLE_SEARCH_API_KEY')
+    cx = os.getenv('SEARCH_ENGINE_ID')
     
-    # แยกประเภทคีย์เวิร์ด (พระเครื่อง หรือ อสังหาริมทรัพย์)
-    is_amulet = any(k in query for k in ["พระเครื่อง", "พระ", "เช่าพระ", "ปล่อยพระ", "ส่องพระ", "เหรียญหลวงพ่อ"])
+    if not api_key or not cx:
+        print("--- DEBUG: GOOGLE_SEARCH_API_KEY or SEARCH_ENGINE_ID is missing ---", flush=True)
+        return None
+
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        'key': api_key,
+        'cx': cx,
+        'q': query,
+        'gl': 'th',
+        'hl': 'th',
+        'num': 5
+    }
     
-    links = []
-    if is_amulet:
-        links = [
-            {"title": f"ค้นหา '{query}' บน ท่าพระจันทร์ดอทคอม (Thaprachan)", "url": f"https://www.thaprachan.com/search_amulet.php?keyword={encoded_query}"},
-            {"title": f"ค้นหา '{query}' บน Kaidee Amulet", "url": f"https://www.kaidee.com/c34-amulet/?q={encoded_query}"},
-            {"title": f"ค้นหา '{query}' บน Web-Pra (เว็บพระ)", "url": f"https://www.web-pra.com/auction/search?q={encoded_query}"},
-            {"title": f"ค้นหา '{query}' บน Ennxo Amulet", "url": f"https://www.ennxo.com/amulet?q={encoded_query}"},
-            {"title": f"ค้นหา '{query}' บน Google ประเทศไทย (ผลลัพธ์พระเครื่อง)", "url": f"https://www.google.co.th/search?q={encoded_query}+ site:thaprachan.com+OR+site:g-pra.com+OR+site:uamulet.com"}
-        ]
-    else:
-        links = [
-            {"title": f"ค้นหาประกาศ '{query}' บน DDproperty", "url": f"https://www.ddproperty.com/property-for-sale?freetext={encoded_query}"},
-            {"title": f"ค้นหาประกาศ '{query}' บน Kaidee Property", "url": f"https://www.kaidee.com/c16-property/?q={encoded_query}"},
-            {"title": f"ค้นหาประกาศ '{query}' บน Propertyhub", "url": f"https://propertyhub.in.th/ค้นหา/{encoded_query}"},
-            {"title": f"ค้นหาประกาศ '{query}' บน Ennxo Property", "url": f"https://www.ennxo.com/property?q={encoded_query}"},
-            {"title": f"ค้นหาประกาศ '{query}' บน Baania", "url": f"https://baania.com/th/search?q={encoded_query}"}
-        ]
+    try:
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
         
-    lines = [f"🔎 รวมลิงก์ประกาศภาษาไทยที่เกี่ยวข้องครับ:\n"]
-    for i, item in enumerate(links, 1):
-        lines.append(f"{i}. {item['title']}\n👉 {item['url']}")
-        
-    return "\n\n".join(lines)
+        items = data.get('items', [])
+        if not items:
+            return None
+            
+        lines = [f"🔎 รวมลิงก์ประกาศที่ตรงที่สุดครับ:\n"]
+        for i, item in enumerate(items, 1):
+            title = item.get('title', 'ประกาศไม่มีชื่อ')
+            link = item.get('link', '')
+            lines.append(f"{i}. {title}\n👉 {link}")
+            
+        return "\n\n".join(lines)
+    except Exception as e:
+        print(f"--- DEBUG Google Custom Search Error: {e} ---", flush=True)
+        return None
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     """เรียกใช้ Gemini API ทั่วไป"""
@@ -165,8 +173,13 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 def async_search_and_push(user_id, query):
     """กระบวนการค้นหาหลังบ้าน (Async Thread)"""
     start_loading_animation(user_id)
-    reply_text = generate_thai_search_links(query)
     
+    # ดึงผลลัพธ์ลิงก์ตรงจาก Google API
+    reply_text = search_google_custom_api(query)
+    
+    if not reply_text:
+        reply_text = f"ขออภัยครับ ศิษย์น้องไม่สามารถดึงข้อมูลประกาศตรงสำหรับ '{query}' ได้ในขณะนี้"
+
     try:
         line_bot_api.push_message(
             user_id,
@@ -215,7 +228,7 @@ def handle_message(event):
             TextSendMessage(text=f"ศิษย์น้องรับเรื่อง '{user_msg}' แล้วครับ กำลังออกไปค้นหาลิงก์ให้อยู่ รอสักครู่นะครับ...")
         )
         
-        # 2. แยก Thread สร้างลิงก์ตรงค้นหาเว็บไทยหลังบ้าน
+        # 2. แยก Thread ดึงประกาศจาก Google API หลังบ้าน
         threading.Thread(target=async_search_and_push, args=(user_id, user_msg)).start()
         
     else:

@@ -8,7 +8,8 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, 
-    ImageMessage
+    ImageMessage, QuickReply, QuickReplyButton, URIAction,
+    FlexSendMessage
 )
 import google.generativeai as genai
 from openai import OpenAI
@@ -69,6 +70,76 @@ JATAKA_DATABASE = [
         }
     }
 ]
+
+def get_liff_url():
+    """ส่งคืน URL ของ LIFF"""
+    return f"https://liff.line.me/{LIFF_ID}" if LIFF_ID else "https://line.me"
+
+def get_quick_reply_button():
+    """สร้างปุ่ม Quick Reply แนบท้ายข้อความ"""
+    if not LIFF_ID:
+        return None
+    return QuickReply(items=[
+        QuickReplyButton(
+            action=URIAction(
+                label="🔮 เสี่ยงทายชาดก",
+                uri=get_liff_url()
+            )
+        )
+    ])
+
+def create_prediction_flex_card():
+    """สร้าง การ์ด Flex Message สำหรับปุ่มทำนายชาดก"""
+    liff_url = get_liff_url()
+    flex_contents = {
+        "type": "bubble",
+        "hero": {
+            "type": "image",
+            "url": "https://images.unsplash.com/photo-1507692049790-de58290a4334?w=600",
+            "size": "full",
+            "aspectRatio": "20:13",
+            "aspectMode": "cover"
+        },
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {
+                    "type": "text",
+                    "text": "🔮 เสี่ยงทายชาดก 547 ชาติ",
+                    "weight": "bold",
+                    "size": "xl",
+                    "color": "#1DB446"
+                },
+                {
+                    "type": "text",
+                    "text": "ค้นหาคำทำนาย พร้อมหลักธรรมะนิมิตเพื่อเสริมสร้างบารมีประจำวันของศิษย์พี่",
+                    "wrap": True,
+                    "color": "#666666",
+                    "size": "sm",
+                    "margin": "md"
+                }
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "sm",
+            "contents": [
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "color": "#1DB446",
+                    "action": {
+                        "type": "uri",
+                        "label": "✨ เปิดหน้าเสี่ยงทายชาดก",
+                        "uri": liff_url
+                    }
+                }
+            ]
+        }
+    }
+    return FlexSendMessage(alt_text="🔮 กดเปิดหน้าเสี่ยงทายชาดก โพธิ Vision", contents=flex_contents)
 
 def start_loading_animation(user_id):
     try:
@@ -132,9 +203,25 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 
 def async_process_and_push(user_id, user_msg):
     start_loading_animation(user_id)
+    
+    # หากผู้ใช้พิมพ์คำสั่งขอทำนาย/เมนู ให้ส่ง Flex Card ปุ่มทำนาย
+    trigger_keywords = ["เสี่ยงทาย", "ทำนาย", "ชาดก", "เมนู", "ดวง"]
+    if any(kw in user_msg for kw in trigger_keywords):
+        flex_card = create_prediction_flex_card()
+        try:
+            line_bot_api.push_message(user_id, flex_card)
+            return
+        except Exception as e:
+            print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
+
+    # สนทนา AI ปกติ พร้อมแนบปุ่ม Quick Reply เปิด LIFF
     reply_text = generate_ai_response(SYSTEM_INSTRUCTION, user_msg)
+    quick_reply = get_quick_reply_button()
     try:
-        line_bot_api.push_message(user_id, TextSendMessage(text=reply_text))
+        line_bot_api.push_message(
+            user_id, 
+            TextSendMessage(text=reply_text, quick_reply=quick_reply)
+        )
     except Exception as e:
         print(f"--- DEBUG Push Error: {e} ---", flush=True)
 
@@ -183,7 +270,12 @@ def handle_image(event):
         reply_text = generate_ai_response(vision_instruction, "ช่วยอธิบาย หรือวิเคราะห์สิ่งที่เห็นในภาพนี้ให้ศิษย์พี่หน่อยครับ", image_bytes)
     except Exception as e:
         reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับศิษย์พี่"
-    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply_text))
+    
+    quick_reply = get_quick_reply_button()
+    line_bot_api.reply_message(
+        event.reply_token, 
+        TextSendMessage(text=reply_text, quick_reply=quick_reply)
+    )
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))

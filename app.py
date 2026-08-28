@@ -8,7 +8,7 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, 
-    ImageMessage, QuickReply, QuickReplyButton, TextAction,
+    ImageMessage, QuickReply, QuickReplyButton, MessageAction,
     FlexSendMessage
 )
 import google.generativeai as genai
@@ -41,11 +41,11 @@ SYSTEM_INSTRUCTION = (
 def get_quick_reply_menu():
     """สร้าง Quick Reply 5 ปุ่มเมนูหลักในแชทบอทไลน์โดยตรง"""
     return QuickReply(items=[
-        QuickReplyButton(action=TextAction(label="🔮 ดวงวันนี้(ชาดก)", text="ขอคำทำนายดวงวันนี้จากชาดก")),
-        QuickReplyButton(action=TextAction(label="💼 การงาน(ไม้เท้า)", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
-        QuickReplyButton(action=TextAction(label="💰 การเงิน(เหรียญ)", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
-        QuickReplyButton(action=TextAction(label="❤️ ความรัก(ถ้วย)", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
-        QuickReplyButton(action=TextAction(label="⚔️ สุขภาพ/อุปสรรค(ดาบ)", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
+        QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้(ชาดก)", text="ขอคำทำนายดวงวันนี้จากชาดก")),
+        QuickReplyButton(action=MessageAction(label="💼 การงาน(ไม้เท้า)", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
+        QuickReplyButton(action=MessageAction(label="💰 การเงิน(เหรียญ)", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
+        QuickReplyButton(action=MessageAction(label="❤️ ความรัก(ถ้วย)", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
+        QuickReplyButton(action=MessageAction(label="⚔️ สุขภาพ/อุปสรรค(ดาบ)", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
     ])
 
 def create_menu_flex_card():
@@ -133,7 +133,6 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
     if not api_key: return None
     try:
         genai.configure(api_key=api_key)
-        # ใช้ gemini-1.5-flash เพื่อความเสถียรสูงสุด
         model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=system_instruction)
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))

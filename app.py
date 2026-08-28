@@ -3,12 +3,12 @@ import os
 import random
 import threading
 import requests
-from flask import Flask, request, render_template, jsonify, abort
+from flask import Flask, request, jsonify, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, 
-    ImageMessage, QuickReply, QuickReplyButton, URIAction,
+    ImageMessage, QuickReply, QuickReplyButton, TextAction,
     FlexSendMessage
 )
 import google.generativeai as genai
@@ -20,7 +20,6 @@ app = Flask(__name__)
 # ดึงค่า Keys จาก Environment Variables
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-LIFF_ID = os.getenv('LIFF_ID', '')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -40,22 +39,18 @@ SYSTEM_INSTRUCTION = (
     "3. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
 )
 
-def get_liff_url():
-    return f"https://liff.line.me/{LIFF_ID}" if LIFF_ID else "https://line.me"
-
 def get_quick_reply_menu():
-    """สร้าง Quick Reply 5 ปุ่มเมนูหลักตามที่ศิษย์พี่ต้องการ"""
+    """สร้าง Quick Reply 5 ปุ่มเมนูหลักในแชทบอทไลน์โดยตรง"""
     return QuickReply(items=[
-        QuickReplyButton(action=URIAction(label="🔮 ดวงวันนี้(ชาดก)", uri=get_liff_url())),
-        QuickReplyButton(action=TextMessage(label="💼 การงาน(ไม้เท้า)", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
-        QuickReplyButton(action=TextMessage(label="💰 การเงิน(เหรียญ)", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
-        QuickReplyButton(action=TextMessage(label="❤️ ความรัก(ถ้วย)", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
-        QuickReplyButton(action=TextMessage(label="⚔️ สุขภาพ/อุปสรรค(ดาบ)", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
+        QuickReplyButton(action=TextAction(label="🔮 ดวงวันนี้(ชาดก)", text="ขอคำทำนายดวงวันนี้จากชาดก")),
+        QuickReplyButton(action=TextAction(label="💼 การงาน(ไม้เท้า)", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
+        QuickReplyButton(action=TextAction(label="💰 การเงิน(เหรียญ)", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
+        QuickReplyButton(action=TextAction(label="❤️ ความรัก(ถ้วย)", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
+        QuickReplyButton(action=TextAction(label="⚔️ สุขภาพ/อุปสรรค(ดาบ)", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
     ])
 
 def create_menu_flex_card():
     """สร้าง Flex Message เมนูหลัก 5 ปุ่ม"""
-    liff_url = get_liff_url()
     flex_contents = {
         "type": "bubble",
         "hero": {
@@ -95,7 +90,7 @@ def create_menu_flex_card():
                     "type": "button",
                     "style": "primary",
                     "color": "#1DB446",
-                    "action": {"type": "uri", "label": "✨ เสี่ยงทายชาดก 547 ชาติ (LIFF)", "uri": liff_url}
+                    "action": {"type": "message", "label": "🔮 ดวงวันนี้ (ชาดก)", "text": "ขอคำทำนายดวงวันนี้จากชาดก"}
                 },
                 {
                     "type": "button",
@@ -195,7 +190,7 @@ def async_process_and_push(user_id, user_msg):
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
 
-    # กำหนด Prompt ให้ AI ทำนายสดตามหัวข้อที่กด พร้อมโครงสร้างมาตรฐานชาดก
+    # กำหนด Prompt ให้ AI ทำนายสดตามโครงสร้างมาตรฐานที่ศิษย์พี่ต้องการ
     dynamic_instruction = SYSTEM_INSTRUCTION
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         jataka_num = random.randint(1, 547)
@@ -233,20 +228,10 @@ def async_process_and_push(user_id, user_msg):
     except Exception as e:
         print(f"--- DEBUG Push Error: {e} ---", flush=True)
 
-# 🌐 LIFF Web Routes & API
-@app.route("/liff", methods=['GET'])
-def liff_page():
-    return render_template("index.html", liff_id=LIFF_ID)
-
-@app.route("/api/draw", methods=['GET'])
-def api_draw():
-    # ส่งข้อมูลชาดกสุ่มจาก AI หรือ JSON เบื้องต้นให้หน้าเว็บ LIFF
-    return jsonify({"success": True, "message": "API Ready"})
-
 # 📩 LINE Webhook Routes
 @app.route("/", methods=['GET'])
 def health_check():
-    return "Podhi Vision Line Bot & LIFF App is running smoothly!", 200
+    return "Podhi Vision Line Bot is running smoothly!", 200
 
 @app.route("/callback", methods=['POST'])
 def callback():

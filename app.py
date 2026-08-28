@@ -2,6 +2,8 @@ import io
 import os
 import random
 import threading
+import sqlite3
+from datetime import datetime
 import requests
 from flask import Flask, request, jsonify, abort
 from linebot import LineBotApi, WebhookHandler
@@ -38,18 +40,53 @@ SYSTEM_INSTRUCTION = (
     "3. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
 )
 
+# ตั้งค่าฐานข้อมูล SQLite สำหรับจำกัดสิทธิ์วันละ 1 ครั้ง
+def init_db():
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_limits (
+            user_id TEXT PRIMARY KEY,
+            last_date TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+init_db()
+
+def check_daily_limit(user_id):
+    today = datetime.now().strftime('%Y-%m-%d')
+    conn = sqlite3.connect('bot_data.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT last_date FROM user_limits WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    
+    if row and row[0] == today:
+        conn.close()
+        return False # เคยใช้สิทธิ์ของวันนี้ไปแล้ว
+    
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_limits (user_id, last_date)
+        VALUES (?, ?)
+    ''', (user_id, today))
+    conn.commit()
+    conn.close()
+    return True # ยังไม่เคยใช้สิทธิ์ อนุญาตให้ทำนายได้
+
 def get_quick_reply_menu():
-    """สร้าง Quick Reply ปุ่มเมนูขนาดกะทัดรัด ไม่บังหน้าจอ"""
+    """สร้าง Quick Reply 6 ปุ่มเมนูหลัก"""
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
         QuickReplyButton(action=MessageAction(label="💰 การเงิน", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
         QuickReplyButton(action=MessageAction(label="❤️ ความรัก", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
-        QuickReplyButton(action=MessageAction(label="⚔️ สุขภาพ", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
+        QuickReplyButton(action=MessageAction(label="🛡️ สุขภาพ", text="ขอคำทำนายสุขภาพจากไพ่ดาบ")),
+        QuickReplyButton(action=MessageAction(label="⚔️ อุปสรรค", text="ขอคำทำนายอุปสรรคจากไพ่ดาบ"))
     ])
 
 def create_menu_flex_card():
-    """สร้าง Flex Message เมนูหลัก 5 ปุ่ม"""
+    """สร้าง Flex Message เมนูหลัก 6 ปุ่ม"""
     flex_contents = {
         "type": "bubble",
         "hero": {
@@ -72,7 +109,7 @@ def create_menu_flex_card():
                 },
                 {
                     "type": "text",
-                    "text": "เลือกหัวข้อคำทำนายที่ศิษย์พี่ต้องการได้เลยครับ",
+                    "text": "เลือกหัวข้อคำทำนายที่ศิษย์พี่ต้องการได้เลยครับ (จำกัดสิทธิ์วันละ 1 ครั้ง)",
                     "wrap": True,
                     "color": "#666666",
                     "size": "sm",
@@ -109,7 +146,12 @@ def create_menu_flex_card():
                 {
                     "type": "button",
                     "style": "secondary",
-                    "action": {"type": "message", "label": "⚔️ สุขภาพ/อุปสรรค (ดาบ)", "text": "ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"}
+                    "action": {"type": "message", "label": "🛡️ สุขภาพ (ดาบ)", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ"}
+                },
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {"type": "message", "label": "⚔️ อุปสรรค (ดาบ)", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ"}
                 }
             ]
         }
@@ -123,7 +165,8 @@ def start_loading_animation(user_id):
             "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
             "Content-Type": "application/json"
         }
-        data = {"chatId": user_id, "loadingSeconds": 60}
+        # ขยายเวลาโหลดดิ้งเป็น 180 วินาที ป้องกันหลอดตัดก่อนคำตอบมา
+        data = {"chatId": user_id, "loadingSeconds": 180}
         requests.post(url, headers=headers, json=data, timeout=5)
     except Exception as e:
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
@@ -159,7 +202,7 @@ def ask_openrouter(system_instruction, user_msg):
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_instruction}, {"role": "user", "content": user_msg}],
-                timeout=10
+                timeout=15
             )
             if response and response.choices:
                 text = response.choices[0].message.content
@@ -179,6 +222,7 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 def async_process_and_push(user_id, user_msg):
     start_loading_animation(user_id)
     
+    # คำสั่งเรียกดูเมนูหลัก (ไม่นับเป็นสิทธิ์ดูดวงรายวัน)
     trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
     if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
         flex_card = create_menu_flex_card()
@@ -187,6 +231,20 @@ def async_process_and_push(user_id, user_msg):
             return
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
+
+    # ตรวจสอบสิทธิ์การดูดวงรายวัน (จำกัดวันละ 1 ครั้ง)
+    prediction_keywords = ["ชาดก", "ไม้เท้า", "เหรียญ", "ถ้วย", "ดาบ", "การงาน", "การเงิน", "ความรัก", "สุขภาพ", "อุปสรรค"]
+    if any(k in user_msg for k in prediction_keywords):
+        if not check_daily_limit(user_id):
+            # หากเคยดูของวันนี้ไปแล้ว แจ้งเตือนสุภาพ
+            try:
+                line_bot_api.push_message(
+                    user_id,
+                    TextSendMessage(text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงประจำวันไปแล้ว โปรดรอรับคำทำนายใหม่อีกครั้งในวันพรุ่งนี้ครับ", quick_reply=get_quick_reply_menu())
+                )
+            except Exception as e:
+                print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
+            return
 
     dynamic_instruction = SYSTEM_INSTRUCTION
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
@@ -210,9 +268,12 @@ def async_process_and_push(user_id, user_msg):
     elif "ถ้วย" in user_msg or "ความรัก" in user_msg:
         card_num = random.randint(1, 10)
         user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
-    elif "ดาบ" in user_msg or "สุขภาพ" in user_msg or "อุปสรรค" in user_msg:
+    elif "สุขภาพ" in user_msg:
         card_num = random.randint(1, 10)
-        user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรคปัญหา หรือโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติรับมือ"
+        user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูแลรักษากายใจในมุมมองพุทธธรรม"
+    elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
+        card_num = random.randint(1, 10)
+        user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง' พร้อมวิธีตั้งสติฟันฝ่าอุปสรรคด้วยปัญญา"
 
     reply_text = generate_ai_response(dynamic_instruction, user_msg)
     quick_reply = get_quick_reply_menu()

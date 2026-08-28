@@ -173,7 +173,7 @@ def trigger_loading(user_id, seconds):
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
 
 def start_loading_animation(user_id):
-    # หลอดที่ 1: ยิงทันที 60 วินาที (ค่าสูงสุดที่ LINE API อนุญาตต่อครั้ง)
+    # หลอดที่ 1: ยิงทันที 60 วินาที (เฉพาะกรณีที่ต้องรอ AI ประมวลผลจริง)
     trigger_loading(user_id, 60)
     
     # หลอดที่ 2: ตั้งเวลาหน่วงไว้ 55 วินาที แล้วยิงต่ออีก 60 วินาที (รวมเป็น 120 วินาที)
@@ -231,11 +231,10 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     return "ขออภัยครับศิษย์พี่ ขณะนี้ศิษย์น้องไม่สามารถประมวลผลได้ชั่วคราว โปรดลองใหม่อีกครั้งนะครับ"
 
 def async_process_and_push(user_id, user_msg):
-    start_loading_animation(user_id)
-    
-    # คำสั่งเรียกดูเมนูหลัก
+    # คำสั่งเรียกดูเมนูหลัก (ตอบทันที ใช้หลอดเวลาสั้นๆ เดี่ยวๆ)
     trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
     if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
+        trigger_loading(user_id, 5)
         flex_card = create_menu_flex_card()
         try:
             line_bot_api.push_message(user_id, flex_card)
@@ -260,6 +259,8 @@ def async_process_and_push(user_id, user_msg):
 
     if topic:
         if not check_topic_limit(user_id, topic):
+            # กรณีใช้สิทธิ์ไปแล้ว ตอบกลับทันที ใช้หลอดเวลาสั้นๆ เดี่ยวๆ (เช่น 5 วินาที) ไม่ให้ค้างยาวและไม่มีหลอดซ้ำซ้อน
+            trigger_loading(user_id, 5)
             try:
                 line_bot_api.push_message(
                     user_id,
@@ -271,6 +272,9 @@ def async_process_and_push(user_id, user_msg):
             except Exception as e:
                 print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
             return
+
+    # หากผ่านเงื่อนไขทั้งหมดและจะต้องให้ AI ประมวลผลจริง จึงเริ่มเปิดใช้งานหลอดเวลาคู่ 2 รอบตามปกติ
+    start_loading_animation(user_id)
 
     dynamic_instruction = SYSTEM_INSTRUCTION
     if topic == "jataka":
@@ -330,13 +334,13 @@ def callback():
 def handle_message(event):
     user_msg = event.message.text.strip()
     user_id = event.source.user_id
-    start_loading_animation(user_id)
+    # ถอด start_loading_animation ออกจากตรงนี้ เพื่อป้องกันการเปิดหลอดค้างไว้ก่อนเช็คเงื่อนไข
     threading.Thread(target=async_process_and_push, args=(user_id, user_msg)).start()
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     user_id = event.source.user_id
-    start_loading_animation(user_id)
+    start_loading_animation(user_id) # รูปภาพต้องเรียก AI เสมอ จึงเปิดหลอดคู่ปกติ
     try:
         message_content = line_bot_api.get_message_content(event.message.id)
         image_bytes = message_content.content

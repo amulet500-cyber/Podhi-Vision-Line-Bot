@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>โพธิ Vision - เสี่ยงทายชาดก</title>
+  <!-- LINE LIFF SDK -->
+  <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Sukhumvit Set', 'Taviraj', -apple-system, sans-serif; }
+    body { background-color: #f7f9fa; color: #2b2b2b; }
+
+    .header-banner {
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: white; padding: 20px 16px; text-align: center;
+      border-bottom-left-radius: 16px; border-bottom-right-radius: 16px;
+    }
+    .header-banner h1 { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
+    .header-banner p { font-size: 13px; opacity: 0.9; }
+
+    .card {
+      background: white; border-radius: 12px; padding: 16px;
+      margin: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+    }
+    .card-title { font-size: 14px; color: #888; font-weight: bold; margin-bottom: 6px; }
+    .jataka-name { font-size: 18px; font-weight: bold; color: #2a5298; }
+    .jataka-barami { font-size: 14px; color: #e67e22; margin-top: 4px; }
+
+    .section-label { text-align: center; font-size: 14px; font-weight: bold; color: #555; margin: 16px 0 8px; }
+
+    /* Layout Grid 2x2 สัมผัสง่าย */
+    .category-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      padding: 0 16px; margin-bottom: 90px;
+    }
+    .category-btn {
+      background: #ffffff; border: 2px solid #e2e8f0; border-radius: 12px;
+      padding: 16px 8px; text-align: center; font-weight: bold; font-size: 15px;
+      color: #333; box-shadow: 0 2px 6px rgba(0,0,0,0.04); cursor: pointer; transition: 0.2s;
+    }
+    .category-btn:active { transform: scale(0.97); background: #edf2f7; }
+
+    /* Sticky Bottom Button */
+    .sticky-bottom-container {
+      position: fixed; bottom: 0; left: 0; width: 100%;
+      background: #ffffff; padding: 12px 16px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      box-shadow: 0 -4px 12px rgba(0,0,0,0.08); z-index: 100;
+    }
+    .primary-btn {
+      width: 100%; background-color: #06C755; color: white;
+      border: none; border-radius: 10px; padding: 14px;
+      font-size: 16px; font-weight: bold; cursor: pointer;
+    }
+
+    /* Screen Views Handling */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* Prediction Result Styles */
+    .prediction-card { text-align: center; }
+    .prediction-img { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 12px; }
+    .keyword-tag { display: inline-block; background: #fff3cd; color: #856404; padding: 4px 12px; border-radius: 20px; font-weight: bold; font-size: 13px; }
+    .prediction-box { background: #f8f9fa; border-left: 4px solid #2a5298; padding: 12px; margin: 12px 0; text-align: left; border-radius: 4px; }
+    .solution-box { background: #f0fdf4; border-left: 4px solid #06C755; padding: 12px; margin: 12px 0; text-align: left; border-radius: 4px; }
+    
+    .inline-btns { display: flex; gap: 8px; margin: 16px; margin-bottom: 90px; }
+    .secondary-btn { flex: 1; background: #edf2f7; color: #4a5568; border: none; padding: 12px; border-radius: 8px; font-size: 14px; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <!-- ================= หน้าที่ 1: หน้าหลักสุ่มเปิดไพ่ ================= -->
+  <div id="main-screen" class="screen active">
+    <div class="header-banner">
+      <h1>โพธิ Vision</h1>
+      <p>เสี่ยงทายชาดก 547 ชาติ เพื่อชีวิตและแนวทางสติ</p>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📜 ชาดกประจำวันของคุณ</div>
+      <div id="jataka-title" class="jataka-name">กำลังโหลดข้อมูลชาดก...</div>
+      <div id="jataka-barami" class="jataka-barami">...</div>
+    </div>
+
+    <div class="section-label">--- เลือกหมวดที่ต้องการสุ่มเปิดไพ่ ---</div>
+
+    <div class="category-grid">
+      <div class="category-btn" onclick="selectCategory('work')">💼 การงาน<br><small style="color:#777; font-weight:normal;">(ไม้เท้า)</small></div>
+      <div class="category-btn" onclick="selectCategory('money')">💰 การเงิน<br><small style="color:#777; font-weight:normal;">(เหรียญ)</small></div>
+      <div class="category-btn" onclick="selectCategory('love')">💖 ความรัก<br><small style="color:#777; font-weight:normal;">(ถ้วย)</small></div>
+      <div class="category-btn" onclick="selectCategory('health')">🧘‍♂️ สุขภาพ<br><small style="color:#777; font-weight:normal;">(ดาบ)</small></div>
+    </div>
+
+    <div class="sticky-bottom-container">
+      <button class="primary-btn" onclick="fetchRandomJataka()">🎲 สุ่มชาดกใหม่ / เขย่า</button>
+    </div>
+  </div>
+
+  <!-- ================= หน้าที่ 2: หน้าแสดงผลการทำนาย ================= -->
+  <div id="result-screen" class="screen">
+    <div class="header-banner">
+      <h1>ผลการทำนายชาดก</h1>
+      <p id="result-cat-title">ด้านการงาน</p>
+    </div>
+
+    <div class="card prediction-card">
+      <img id="result-img" class="prediction-img" src="" alt="Jataka Card">
+      <div id="result-keyword" class="keyword-tag">คีย์เวิร์ด</div>
+      
+      <div class="prediction-box">
+        <strong>🔮 ดวง 50% (สภาวะ):</strong>
+        <p id="result-predict" style="margin-top:4px; font-size:14px; color:#444;">...</p>
+      </div>
+
+      <div class="solution-box">
+        <strong>🧘‍♂️ ทางแก้ 50% (หลักธรรมะ):</strong>
+        <p id="result-solution" style="margin-top:4px; font-size:14px; color:#276749;">...</p>
+      </div>
+    </div>
+
+    <div class="inline-btns">
+      <button class="secondary-btn" onclick="showScreen('main-screen')">🔄 สุ่มหมวดอื่น</button>
+      <button class="secondary-btn" onclick="alert('อ่านเรื่องเต็มได้ในไลน์แชตกับศิษย์น้องครับ')">📜 อ่านเรื่องเต็ม</button>
+    </div>
+
+    <div class="sticky-bottom-container">
+      <button class="primary-btn" onclick="shareToLine()">📤 บันทึก / แชร์ลง LINE แชต</button>
+    </div>
+  </div>
+
+  <script>
+    let currentJataka = null;
+    let selectedCategory = 'work';
+    const LIFF_ID = "{{ liff_id }}";
+
+    // 1. เริ่มต้นใช้งาน LIFF SDK
+    async function initLIFF() {
+      try {
+        if (LIFF_ID) {
+          await liff.init({ liffId: LIFF_ID });
+        }
+      } catch (err) {
+        console.error("LIFF Init Error:", err);
+      }
+      fetchRandomJataka();
+    }
+
+    // 2. ดึงข้อมูลสุ่มชาดกจาก API
+    async function fetchRandomJataka() {
+      try {
+        const res = await fetch('/api/draw');
+        const json = await res.json();
+        if (json.success) {
+          currentJataka = json.data;
+          document.getElementById('jataka-title').innerText = currentJataka.name;
+          document.getElementById('jataka-barami').innerText = "บารมีประจำชาติ: " + currentJataka.barami;
+        }
+      } catch (e) {
+        console.error("Fetch Error:", e);
+      }
+    }
+
+    // 3. เลือกหมวดคำทำนาย
+    function selectCategory(cat) {
+      if (!currentJataka) return;
+      selectedCategory = cat;
+      
+      const catNames = { work: "💼 ด้านการงาน", money: "💰 ด้านการเงิน", love: "💖 ด้านความรัก", health: "🧘‍♂️ ด้านสุขภาพ" };
+      document.getElementById('result-cat-title').innerText = catNames[cat];
+      
+      const predData = currentJataka.predictions[cat];
+      document.getElementById('result-img').src = currentJataka.image_url;
+      document.getElementById('result-keyword').innerText = "คำจำกัดความ: " + currentJataka.keyword;
+      document.getElementById('result-predict').innerText = predData.predict;
+      document.getElementById('result-solution').innerText = predData.solution;
+
+      showScreen('result-screen');
+    }
+
+    // 4. สลับสับเปลี่ยนหน้าจอ
+    function showScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(screenId).classList.add('active');
+      window.scrollTo(0, 0);
+    }
+
+    // 5. ฟังก์ชันแชร์การทำนายลง LINE แชต
+    async function shareToLine() {
+      if (!liff.isLoggedIn()) {
+        alert("กรุณาเปิดใช้งานผ่าน LINE App ครับศิษย์พี่");
+        return;
+      }
+      if (liff.isApiAvailable('shareTargetPicker')) {
+        try {
+          const catNames = { work: "การงาน", money: "การเงิน", love: "ความรัก", health: "สุขภาพ" };
+          const predData = currentJataka.predictions[selectedCategory];
+          
+          await liff.shareTargetPicker([
+            {
+              type: "text",
+              text: `🔮 ผลการเสี่ยงทายชาดก "โพธิ Vision"\n` +
+                    `ชาดก: ${currentJataka.name}\n` +
+                    `หมวด: ${catNames[selectedCategory]}\n` +
+                    `คำจำกัดความ: ${currentJataka.keyword}\n\n` +
+                    `ดวง 50%: ${predData.predict}\n` +
+                    `ทางแก้ 50%: ${predData.solution}`
+            }
+          ]);
+        } catch (err) {
+          console.error("Share failed", err);
+        }
+      } else {
+        alert("อุปกรณ์นี้ไม่รองรับการแชร์โดยตรงครับศิษย์พี่");
+      }
+    }
+
+    window.onload = initLIFF;
+  </script>
+</body>
+</html>

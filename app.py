@@ -39,13 +39,13 @@ SYSTEM_INSTRUCTION = (
 )
 
 def get_quick_reply_menu():
-    """สร้าง Quick Reply 5 ปุ่มเมนูหลักในแชทบอทไลน์โดยตรง"""
+    """สร้าง Quick Reply ปุ่มเมนูขนาดกะทัดรัด ไม่บังหน้าจอ"""
     return QuickReply(items=[
-        QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้(ชาดก)", text="ขอคำทำนายดวงวันนี้จากชาดก")),
-        QuickReplyButton(action=MessageAction(label="💼 การงาน(ไม้เท้า)", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
-        QuickReplyButton(action=MessageAction(label="💰 การเงิน(เหรียญ)", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
-        QuickReplyButton(action=MessageAction(label="❤️ ความรัก(ถ้วย)", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
-        QuickReplyButton(action=MessageAction(label="⚔️ สุขภาพ/อุปสรรค(ดาบ)", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
+        QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
+        QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
+        QuickReplyButton(action=MessageAction(label="💰 การเงิน", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
+        QuickReplyButton(action=MessageAction(label="❤️ ความรัก", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
+        QuickReplyButton(action=MessageAction(label="⚔️ สุขภาพ", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
     ])
 
 def create_menu_flex_card():
@@ -192,14 +192,14 @@ def async_process_and_push(user_id, user_msg):
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         jataka_num = random.randint(1, 547)
         user_msg = (
-            f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (โดยอิงจากชาดกเรื่องที่ {jataka_num} หรือเรื่องที่เกี่ยวข้อง) "
-            f"และขอรูปแบบการแสดงผลตามโครงสร้างมาตรฐานนี้เป๊ะๆ:\n\n"
-            f"[{jataka_num}] ชื่อชาดก (ความหมายสั้นๆ)\n"
-            f"คำจำกัดความ : \"...\"\n"
-            f"บารมีประจำชาติ/วัน : ...บารมี\n"
-            f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญอยู่ในปัจจุบัน)\n"
-            f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ กระชับเพื่อแก้ปัญหา)\n\n"
-            f"ขอให้ภาษาคมคาย ลึกซึ้ง และตรงประเด็นตามสไตล์พุทธธรรมพยากรณ์ครับศิษย์น้อง"
+            f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
+            f"และขอรูปแบบการแสดงผลตามโครงสร้างนี้เป๊ะๆ:\n\n"
+            f"[{jataka_num}] ชื่อชาดก\n"
+            f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น ห้ามยาวยืดเยื้อ)\n"
+            f"บารมีประจำชาติ : ...บารมี\n"
+            f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญ)\n"
+            f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
+            f"ขอให้ภาษาคมคาย ลึกซึ้ง ตรงประเด็นครับศิษย์น้อง"
         )
     elif "ไม้เท้า" in user_msg or "การงาน" in user_msg:
         card_num = random.randint(1, 10)

@@ -3,7 +3,7 @@ import os
 import random
 import threading
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import requests
 from flask import Flask, request, jsonify, abort
 from linebot import LineBotApi, WebhookHandler
@@ -57,8 +57,13 @@ def init_db():
 
 init_db()
 
+def get_thailand_today():
+    """ดึงวันที่ปัจจุบันโดยอิงจากเวลาประเทศไทย (UTC+7)"""
+    tz_th = timezone(timedelta(hours=7))
+    return datetime.now(tz_th).strftime('%Y-%m-%d')
+
 def check_topic_limit(user_id, topic):
-    today = datetime.now().strftime('%Y-%m-%d')
+    today = get_thailand_today() # ใช้เวลาประเทศไทยในการเช็คตัดรอบเที่ยงคืน
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute('SELECT last_date FROM user_topic_limits WHERE user_id = ? AND topic = ?', (user_id, topic))

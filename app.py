@@ -173,14 +173,17 @@ def trigger_loading(user_id, seconds):
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
 
 def start_loading_animation(user_id):
-    # หลอดที่ 1: ยิงทันที 60 วินาที (เฉพาะกรณีที่ต้องรอ AI ประมวลผลจริง)
+    """เปิดใช้งานหลอดเวลา พร้อมส่งสัญญาณ Event กลับไปเพื่อควบคุมการปิด"""
+    is_finished = threading.Event()
     trigger_loading(user_id, 60)
     
-    # หลอดที่ 2: ตั้งเวลาหน่วงไว้ 55 วินาที แล้วยิงต่ออีก 60 วินาที (รวมเป็น 120 วินาที)
     def second_wave():
-        trigger_loading(user_id, 60)
-        
+        # หากส่งข้อความเสร็จแล้ว (is_finished ถูกตั้งค่า) จะไม่สั่งเปิดหลอดเวลารอบสอง
+        if not is_finished.is_set():
+            trigger_loading(user_id, 60)
+            
     threading.Timer(55.0, second_wave).start()
+    return is_finished
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
@@ -259,7 +262,7 @@ def async_process_and_push(user_id, user_msg):
 
     if topic:
         if not check_topic_limit(user_id, topic):
-            # กรณีใช้สิทธิ์ไปแล้ว ตอบกลับทันที ใช้หลอดเวลาสั้นๆ เดี่ยวๆ (เช่น 5 วินาที) ไม่ให้ค้างยาวและไม่มีหลอดซ้ำซ้อน
+            # กรณีใช้สิทธิ์ไปแล้ว ตอบกลับทันที ใช้หลอดเวลาสั้นๆ เดี่ยวๆ (เช่น 5 วินาที)
             trigger_loading(user_id, 5)
             try:
                 line_bot_api.push_message(
@@ -273,48 +276,51 @@ def async_process_and_push(user_id, user_msg):
                 print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
             return
 
-    # หากผ่านเงื่อนไขทั้งหมดและจะต้องให้ AI ประมวลผลจริง จึงเริ่มเปิดใช้งานหลอดเวลาคู่ 2 รอบตามปกติ
-    start_loading_animation(user_id)
+    # เริ่มต้นเปิดใช้งานหลอดเวลาคู่ และรับตัวสัญญาณควบคุม (is_finished)
+    fin_event = start_loading_animation(user_id)
 
-    dynamic_instruction = SYSTEM_INSTRUCTION
-    if topic == "jataka":
-        jataka_num = random.randint(1, 547)
-        user_msg = (
-            f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
-            f"และขอรูปแบบการแสดงผลตามโครงสร้างนี้เป๊ะๆ:\n\n"
-            f"[{jataka_num}] ชื่อชาดก\n"
-            f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น ห้ามยาวยืดเยื้อ)\n"
-            f"บารมีประจำชาติ : ...บารมี\n"
-            f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญ)\n"
-            f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
-            f"ขอให้ภาษาคมคาย ลึกซึ้ง ตรงประเด็นครับศิษย์น้อง"
-        )
-    elif topic == "work":
-        card_num = random.randint(1, 10)
-        user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ อ่านสภาวะการงานและแนวทางแก้ไขในรูปแบบพุทธธรรม"
-    elif topic == "money":
-        card_num = random.randint(1, 10)
-        user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ วิเคราะห์กระแสเงินสดและสติในการบริหารเงิน"
-    elif topic == "love":
-        card_num = random.randint(1, 10)
-        user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
-    elif topic == "health":
-        card_num = random.randint(1, 10)
-        user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูแลรักษากายใจในมุมมองพุทธธรรม"
-    elif topic == "obstacle":
-        card_num = random.randint(1, 10)
-        user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง' พร้อมวิธีตั้งสติฟันฝ่าอุปสรรคด้วยปัญญา"
-
-    reply_text = generate_ai_response(dynamic_instruction, user_msg)
-    quick_reply = get_quick_reply_menu()
-    
     try:
+        dynamic_instruction = SYSTEM_INSTRUCTION
+        if topic == "jataka":
+            jataka_num = random.randint(1, 547)
+            user_msg = (
+                f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
+                f"และขอรูปแบบการแสดงผลตามโครงสร้างนี้เป๊ะๆ:\n\n"
+                f"[{jataka_num}] ชื่อชาดก\n"
+                f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น ห้ามยาวยืดเยื้อ)\n"
+                f"บารมีประจำชาติ : ...บารมี\n"
+                f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญ)\n"
+                f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
+                f"ขอให้ภาษาคมคาย ลึกซึ้ง ตรงประเด็นครับศิษย์น้อง"
+            )
+        elif topic == "work":
+            card_num = random.randint(1, 10)
+            user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ อ่านสภาวะการงานและแนวทางแก้ไขในรูปแบบพุทธธรรม"
+        elif topic == "money":
+            card_num = random.randint(1, 10)
+            user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ วิเคราะห์กระแสเงินสดและสติในการบริหารเงิน"
+        elif topic == "love":
+            card_num = random.randint(1, 10)
+            user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
+        elif topic == "health":
+            card_num = random.randint(1, 10)
+            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูแลรักษากายใจในมุมมองพุทธธรรม"
+        elif topic == "obstacle":
+            card_num = random.randint(1, 10)
+            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง' พร้อมวิธีตั้งสติฟันฝ่าอุปสรรคด้วยปัญญา"
+
+        reply_text = generate_ai_response(dynamic_instruction, user_msg)
+        quick_reply = get_quick_reply_menu()
+        
         line_bot_api.push_message(
             user_id, 
             TextSendMessage(text=reply_text, quick_reply=quick_reply)
         )
     except Exception as e:
         print(f"--- DEBUG Push Error: {e} ---", flush=True)
+    finally:
+        # สั่งแจ้งเตือนทันทีว่ากระบวนการทำงานเสร็จสิ้นแล้ว ห้ามเปิดหลอดเวลารอบสองเด็ดขาด
+        fin_event.set()
 
 @app.route("/", methods=['GET'])
 def health_check():
@@ -334,13 +340,12 @@ def callback():
 def handle_message(event):
     user_msg = event.message.text.strip()
     user_id = event.source.user_id
-    # ถอด start_loading_animation ออกจากตรงนี้ เพื่อป้องกันการเปิดหลอดค้างไว้ก่อนเช็คเงื่อนไข
     threading.Thread(target=async_process_and_push, args=(user_id, user_msg)).start()
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     user_id = event.source.user_id
-    start_loading_animation(user_id) # รูปภาพต้องเรียก AI เสมอ จึงเปิดหลอดคู่ปกติ
+    fin_event = start_loading_animation(user_id)
     try:
         message_content = line_bot_api.get_message_content(event.message.id)
         image_bytes = message_content.content
@@ -348,6 +353,8 @@ def handle_image(event):
         reply_text = generate_ai_response(vision_instruction, "ช่วยอธิบาย หรือวิเคราะห์สิ่งที่เห็นในภาพนี้ให้ศิษย์พี่หน่อยครับ", image_bytes)
     except Exception as e:
         reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับศิษย์พี่"
+    finally:
+        fin_event.set() # ปิดกั้นหลอดเวลารอบสองทันทีเมื่อประมวลผลรูปภาพเสร็จ
     
     quick_reply = get_quick_reply_menu()
     line_bot_api.reply_message(

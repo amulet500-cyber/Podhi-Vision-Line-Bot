@@ -25,7 +25,6 @@ line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
 FREE_MODELS = [
-    "google/gemini-2.0-flash-exp:free",
     "meta-llama/llama-3.3-70b-instruct:free",
     "deepseek/deepseek-r1:free",
     "openrouter/auto"
@@ -134,7 +133,8 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
     if not api_key: return None
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=system_instruction)
+        # ใช้ gemini-1.5-flash เพื่อความเสถียรสูงสุด
+        model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=system_instruction)
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
             prompt = user_msg or "ช่วยวิเคราะห์รูปภาพนี้ในมุมมองธรรมะ..."
@@ -180,7 +180,6 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 def async_process_and_push(user_id, user_msg):
     start_loading_animation(user_id)
     
-    # หากผู้ใช้พิมพ์เรียกเมนูหลัก
     trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
     if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
         flex_card = create_menu_flex_card()
@@ -190,7 +189,6 @@ def async_process_and_push(user_id, user_msg):
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
 
-    # กำหนด Prompt ให้ AI ทำนายสดตามโครงสร้างมาตรฐานที่ศิษย์พี่ต้องการ
     dynamic_instruction = SYSTEM_INSTRUCTION
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         jataka_num = random.randint(1, 547)
@@ -228,7 +226,6 @@ def async_process_and_push(user_id, user_msg):
     except Exception as e:
         print(f"--- DEBUG Push Error: {e} ---", flush=True)
 
-# 📩 LINE Webhook Routes
 @app.route("/", methods=['GET'])
 def health_check():
     return "Podhi Vision Line Bot is running smoothly!", 200

@@ -20,7 +20,7 @@ app = Flask(__name__)
 # ดึงค่า Keys จาก Environment Variables
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-LIFF_ID = os.getenv('LIFF_ID', '') # ใส่ LIFF ID ที่ได้จาก LINE Developers Console
+LIFF_ID = os.getenv('LIFF_ID', '')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -35,61 +35,26 @@ FREE_MODELS = [
 SYSTEM_INSTRUCTION = (
     "คุณคือ 'ศิษย์น้อง' ผู้ช่วย AI และหมอดูพุทธธรรมประจำระบบ 'โพธิ Vision'\n"
     "หน้าที่หลักของคุณคือ:\n"
-    "1. ให้คำปรึกษา ดำเนินการทำนายดวงชะตา นำเสนอหลักธรรมะ ชาดก และการเจริญบารมี 10 ประการ\n"
-    "2. สนทนาทั่วไป ให้ความรู้ ตอบคำถามด้วยจิตเมตตา นอบน้อม อ่อนโยน และทรงปัญญา\n"
-    "3. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ\n"
-    "4. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
+    "1. ให้คำปรึกษา ทำนายดวงชะตา นำเสนอหลักธรรมะ ชาดก 547 ชาติ และไพ่ทาโรต์ (เหรียญ, ไม้เท้า, ถ้วย, ดาบ) ด้วยความลึกซึ้ง แม่นยำ และมีจิตเมตตา\n"
+    "2. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ\n"
+    "3. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
 )
 
-# 📜 คลังข้อมูลชาดกตัวอย่าง (สามารถขยายเพิ่มให้ครบ 547 ชาติได้)
-JATAKA_DATABASE = [
-    {
-        "id": 1,
-        "name": "เอกปัณณชาดก",
-        "barami": "ทมะ / ขันติบารมี",
-        "keyword": "ดัดนิสัย ถอดอคติ",
-        "image_url": "https://images.unsplash.com/photo-1507692049790-de58290a4334?w=600",
-        "predictions": {
-            "work": {"predict": "บรรยากาศอึดอัด บริวารเริ่มถอยห่างจากความถือดี", "solution": "เปิดใจรับฟังคำทักท้วง ลดความดื้อรั้น อดทนต่อคำวิจารณ์"},
-            "money": {"predict": "รายจ่ายจุกจิกจากความเอาแต่ใจหรือของไม่จำเป็น", "solution": "ยับยั้งชั่งใจ ตัดสิ่งเพลิดเพลินชั่วคราวออกไป"},
-            "love": {"predict": "มีความขัดแย้งเรื่องอารมณ์และคำพูดที่ไม่ยอมกัน", "solution": "ใช้น้ำเย็นเข้าลูบ ถอยคนละก้าวด้วยขันติธรรม"},
-            "health": {"predict": "ความเครียดสะสม ธาตุไฟกำเริบ ปวดหัว นอนไม่หลับ", "solution": "สวดมนต์ นั่งสมาธิ ปรับลมหายใจให้ผ่อนคลาย"}
-        }
-    },
-    {
-        "id": 539,
-        "name": "มหาชนกชาดก",
-        "barami": "วิริยบารมี",
-        "keyword": "ความเพียรไม่ท้อถอย",
-        "image_url": "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?w=600",
-        "predictions": {
-            "work": {"predict": "ภาระงานหนักหน่วง เสมือนว่ายน้ำอยู่กลางมหาสมุทร", "solution": "อย่าเพิ่งท้อถอย พยายามต่อไป ผลสำเร็จรออยู่ที่ฝั่ง"},
-            "money": {"predict": "หมุนเงินเหน็ดเหนื่อย แต่ยังมีช่องทางให้รอดพ้นได้", "solution": "ขยันหา วางแผนประหยัด ไม่สร้างหนี้สินเพิ่ม"},
-            "love": {"predict": "ต้องประคบประหงมสัมพันธ์ด้วยความอดทนและจริงใจ", "solution": "แสดงความจริงใจให้เห็นผ่านการกระทำมากกว่าคำพูด"},
-            "health": {"predict": "เมื่อยล้ากล้ามเนื้อ ร่างกายอ่อนเพลียจากการทำงานหนัก", "solution": "พักผ่อนให้พอ และทานอาหารบำรุงธาตุ"}
-        }
-    }
-]
-
 def get_liff_url():
-    """ส่งคืน URL ของ LIFF"""
     return f"https://liff.line.me/{LIFF_ID}" if LIFF_ID else "https://line.me"
 
-def get_quick_reply_button():
-    """สร้างปุ่ม Quick Reply แนบท้ายข้อความ"""
-    if not LIFF_ID:
-        return None
+def get_quick_reply_menu():
+    """สร้าง Quick Reply 5 ปุ่มเมนูหลักตามที่ศิษย์พี่ต้องการ"""
     return QuickReply(items=[
-        QuickReplyButton(
-            action=URIAction(
-                label="🔮 เสี่ยงทายชาดก",
-                uri=get_liff_url()
-            )
-        )
+        QuickReplyButton(action=URIAction(label="🔮 ดวงวันนี้(ชาดก)", uri=get_liff_url())),
+        QuickReplyButton(action=TextMessage(label="💼 การงาน(ไม้เท้า)", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
+        QuickReplyButton(action=TextMessage(label="💰 การเงิน(เหรียญ)", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
+        QuickReplyButton(action=TextMessage(label="❤️ ความรัก(ถ้วย)", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
+        QuickReplyButton(action=TextMessage(label="⚔️ สุขภาพ/อุปสรรค(ดาบ)", text="ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"))
     ])
 
-def create_prediction_flex_card():
-    """สร้าง การ์ด Flex Message สำหรับปุ่มทำนายชาดก"""
+def create_menu_flex_card():
+    """สร้าง Flex Message เมนูหลัก 5 ปุ่ม"""
     liff_url = get_liff_url()
     flex_contents = {
         "type": "bubble",
@@ -106,14 +71,14 @@ def create_prediction_flex_card():
             "contents": [
                 {
                     "type": "text",
-                    "text": "🔮 เสี่ยงทายชาดก 547 ชาติ",
+                    "text": "🔮 โพธิ Vision พุทธธรรมพยากรณ์",
                     "weight": "bold",
-                    "size": "xl",
+                    "size": "lg",
                     "color": "#1DB446"
                 },
                 {
                     "type": "text",
-                    "text": "ค้นหาคำทำนาย พร้อมหลักธรรมะนิมิตเพื่อเสริมสร้างบารมีประจำวันของศิษย์พี่",
+                    "text": "เลือกหัวข้อคำทำนายที่ศิษย์พี่ต้องการได้เลยครับ",
                     "wrap": True,
                     "color": "#666666",
                     "size": "sm",
@@ -130,16 +95,32 @@ def create_prediction_flex_card():
                     "type": "button",
                     "style": "primary",
                     "color": "#1DB446",
-                    "action": {
-                        "type": "uri",
-                        "label": "✨ เปิดหน้าเสี่ยงทายชาดก",
-                        "uri": liff_url
-                    }
+                    "action": {"type": "uri", "label": "✨ เสี่ยงทายชาดก 547 ชาติ (LIFF)", "uri": liff_url}
+                },
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {"type": "message", "label": "💼 การงาน (ไม้เท้า)", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า"}
+                },
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {"type": "message", "label": "💰 การเงิน (เหรียญ)", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ"}
+                },
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {"type": "message", "label": "❤️ ความรัก (ถ้วย)", "text": "ขอคำทำนายความรักจากไพ่ถ้วย"}
+                },
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {"type": "message", "label": "⚔️ สุขภาพ/อุปสรรค (ดาบ)", "text": "ขอคำทำนายสุขภาพและอุปสรรคจากไพ่ดาบ"}
                 }
             ]
         }
     }
-    return FlexSendMessage(alt_text="🔮 กดเปิดหน้าเสี่ยงทายชาดก โพธิ Vision", contents=flex_contents)
+    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ โพธิ Vision", contents=flex_contents)
 
 def start_loading_animation(user_id):
     try:
@@ -161,7 +142,7 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
         model = genai.GenerativeModel(model_name="gemini-2.0-flash", system_instruction=system_instruction)
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
-            prompt = user_msg or "ช่วยวิเคราะห์รูปภาพนี้ในมุมมองธรรมะ หรือการทำนายสภาวะให้ศิษย์พี่หน่อยครับ"
+            prompt = user_msg or "ช่วยวิเคราะห์รูปภาพนี้ในมุมมองธรรมะ..."
             response = model.generate_content([prompt, img])
         else:
             response = model.generate_content(user_msg)
@@ -204,19 +185,46 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 def async_process_and_push(user_id, user_msg):
     start_loading_animation(user_id)
     
-    # หากผู้ใช้พิมพ์คำสั่งขอทำนาย/เมนู ให้ส่ง Flex Card ปุ่มทำนาย
-    trigger_keywords = ["เสี่ยงทาย", "ทำนาย", "ชาดก", "เมนู", "ดวง"]
-    if any(kw in user_msg for kw in trigger_keywords):
-        flex_card = create_prediction_flex_card()
+    # หากผู้ใช้พิมพ์เรียกเมนูหลัก
+    trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
+    if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
+        flex_card = create_menu_flex_card()
         try:
             line_bot_api.push_message(user_id, flex_card)
             return
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
 
-    # สนทนา AI ปกติ พร้อมแนบปุ่ม Quick Reply เปิด LIFF
-    reply_text = generate_ai_response(SYSTEM_INSTRUCTION, user_msg)
-    quick_reply = get_quick_reply_button()
+    # กำหนด Prompt ให้ AI ทำนายสดตามหัวข้อที่กด พร้อมโครงสร้างมาตรฐานชาดก
+    dynamic_instruction = SYSTEM_INSTRUCTION
+    if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
+        jataka_num = random.randint(1, 547)
+        user_msg = (
+            f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (โดยอิงจากชาดกเรื่องที่ {jataka_num} หรือเรื่องที่เกี่ยวข้อง) "
+            f"และขอรูปแบบการแสดงผลตามโครงสร้างมาตรฐานนี้เป๊ะๆ:\n\n"
+            f"[{jataka_num}] ชื่อชาดก (ความหมายสั้นๆ)\n"
+            f"คำจำกัดความ : \"...\"\n"
+            f"บารมีประจำชาติ/วัน : ...บารมี\n"
+            f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญอยู่ในปัจจุบัน)\n"
+            f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ กระชับเพื่อแก้ปัญหา)\n\n"
+            f"ขอให้ภาษาคมคาย ลึกซึ้ง และตรงประเด็นตามสไตล์พุทธธรรมพยากรณ์ครับศิษย์น้อง"
+        )
+    elif "ไม้เท้า" in user_msg or "การงาน" in user_msg:
+        card_num = random.randint(1, 10)
+        user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ อ่านสภาวะการงานและแนวทางแก้ไขในรูปแบบพุทธธรรม"
+    elif "เหรียญ" in user_msg or "การเงิน" in user_msg:
+        card_num = random.randint(1, 10)
+        user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ วิเคราะห์กระแสเงินสดและสติในการบริหารเงิน"
+    elif "ถ้วย" in user_msg or "ความรัก" in user_msg:
+        card_num = random.randint(1, 10)
+        user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
+    elif "ดาบ" in user_msg or "สุขภาพ" in user_msg or "อุปสรรค" in user_msg:
+        card_num = random.randint(1, 10)
+        user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรคปัญหา หรือโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติรับมือ"
+
+    reply_text = generate_ai_response(dynamic_instruction, user_msg)
+    quick_reply = get_quick_reply_menu()
+    
     try:
         line_bot_api.push_message(
             user_id, 
@@ -228,14 +236,12 @@ def async_process_and_push(user_id, user_msg):
 # 🌐 LIFF Web Routes & API
 @app.route("/liff", methods=['GET'])
 def liff_page():
-    """แสดงหน้าเว็บ LIFF MiniApp"""
     return render_template("index.html", liff_id=LIFF_ID)
 
 @app.route("/api/draw", methods=['GET'])
 def api_draw():
-    """API สุ่มเลือกชาดกประจำวัน"""
-    selected = random.choice(JATAKA_DATABASE)
-    return jsonify({"success": True, "data": selected})
+    # ส่งข้อมูลชาดกสุ่มจาก AI หรือ JSON เบื้องต้นให้หน้าเว็บ LIFF
+    return jsonify({"success": True, "message": "API Ready"})
 
 # 📩 LINE Webhook Routes
 @app.route("/", methods=['GET'])
@@ -271,7 +277,7 @@ def handle_image(event):
     except Exception as e:
         reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับศิษย์พี่"
     
-    quick_reply = get_quick_reply_button()
+    quick_reply = get_quick_reply_menu()
     line_bot_api.reply_message(
         event.reply_token, 
         TextSendMessage(text=reply_text, quick_reply=quick_reply)

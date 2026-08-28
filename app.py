@@ -40,14 +40,16 @@ SYSTEM_INSTRUCTION = (
     "3. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
 )
 
-# ตั้งค่าฐานข้อมูล SQLite สำหรับจำกัดสิทธิ์วันละ 1 ครั้ง
+# ตั้งค่าฐานข้อมูล SQLite สำหรับจำกัดสิทธิ์แยกตามหัวข้อ (รายวัน)
 def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS user_limits (
-            user_id TEXT PRIMARY KEY,
-            last_date TEXT
+        CREATE TABLE IF NOT EXISTS user_topic_limits (
+            user_id TEXT,
+            topic TEXT,
+            last_date TEXT,
+            PRIMARY KEY (user_id, topic)
         )
     ''')
     conn.commit()
@@ -55,24 +57,24 @@ def init_db():
 
 init_db()
 
-def check_daily_limit(user_id):
+def check_topic_limit(user_id, topic):
     today = datetime.now().strftime('%Y-%m-%d')
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
-    cursor.execute('SELECT last_date FROM user_limits WHERE user_id = ?', (user_id,))
+    cursor.execute('SELECT last_date FROM user_topic_limits WHERE user_id = ? AND topic = ?', (user_id, topic))
     row = cursor.fetchone()
     
     if row and row[0] == today:
         conn.close()
-        return False # เคยใช้สิทธิ์ของวันนี้ไปแล้ว
+        return False # เคยใช้สิทธิ์ของหัวข้อนี้ในวันนี้ไปแล้ว
     
     cursor.execute('''
-        INSERT OR REPLACE INTO user_limits (user_id, last_date)
-        VALUES (?, ?)
-    ''', (user_id, today))
+        INSERT OR REPLACE INTO user_topic_limits (user_id, topic, last_date)
+        VALUES (?, ?, ?)
+    ''', (user_id, topic, today))
     conn.commit()
     conn.close()
-    return True # ยังไม่เคยใช้สิทธิ์ อนุญาตให้ทำนายได้
+    return True # ยังไม่เคยใช้สิทธิ์ของหัวข้อนี้ในวันนี้ อนุญาตให้ทำนายได้
 
 def get_quick_reply_menu():
     """สร้าง Quick Reply 6 ปุ่มเมนูหลัก"""
@@ -109,7 +111,7 @@ def create_menu_flex_card():
                 },
                 {
                     "type": "text",
-                    "text": "เลือกหัวข้อคำทำนายที่ศิษย์พี่ต้องการได้เลยครับ (จำกัดสิทธิ์วันละ 1 ครั้ง)",
+                    "text": "เลือกหัวข้อคำทำนายที่ศิษย์พี่ต้องการได้เลยครับ (ดูได้ทุกหัวข้อ หัวข้อละ 1 ครั้งต่อวัน)",
                     "wrap": True,
                     "color": "#666666",
                     "size": "sm",
@@ -158,18 +160,27 @@ def create_menu_flex_card():
     }
     return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ โพธิ Vision", contents=flex_contents)
 
-def start_loading_animation(user_id):
+def trigger_loading(user_id, seconds):
     try:
         url = "https://api.line.me/v2/bot/chat/loading/start"
         headers = {
             "Authorization": f"Bearer {LINE_CHANNEL_ACCESS_TOKEN}",
             "Content-Type": "application/json"
         }
-        # ขยายเวลาโหลดดิ้งเป็น 180 วินาที ป้องกันหลอดตัดก่อนคำตอบมา
-        data = {"chatId": user_id, "loadingSeconds": 180}
+        data = {"chatId": user_id, "loadingSeconds": seconds}
         requests.post(url, headers=headers, json=data, timeout=5)
     except Exception as e:
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
+
+def start_loading_animation(user_id):
+    # หลอดที่ 1: ยิงทันที 60 วินาที (ค่าสูงสุดที่ LINE API อนุญาตต่อครั้ง)
+    trigger_loading(user_id, 60)
+    
+    # หลอดที่ 2: ตั้งเวลาหน่วงไว้ 55 วินาที แล้วยิงต่ออีก 60 วินาที (รวมเป็น 120 วินาที)
+    def second_wave():
+        trigger_loading(user_id, 60)
+        
+    threading.Timer(55.0, second_wave).start()
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
@@ -222,7 +233,7 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
 def async_process_and_push(user_id, user_msg):
     start_loading_animation(user_id)
     
-    # คำสั่งเรียกดูเมนูหลัก (ไม่นับเป็นสิทธิ์ดูดวงรายวัน)
+    # คำสั่งเรียกดูเมนูหลัก
     trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
     if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
         flex_card = create_menu_flex_card()
@@ -232,22 +243,37 @@ def async_process_and_push(user_id, user_msg):
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
 
-    # ตรวจสอบสิทธิ์การดูดวงรายวัน (จำกัดวันละ 1 ครั้ง)
-    prediction_keywords = ["ชาดก", "ไม้เท้า", "เหรียญ", "ถ้วย", "ดาบ", "การงาน", "การเงิน", "ความรัก", "สุขภาพ", "อุปสรรค"]
-    if any(k in user_msg for k in prediction_keywords):
-        if not check_daily_limit(user_id):
-            # หากเคยดูของวันนี้ไปแล้ว แจ้งเตือนสุภาพ
+    # ตรวจสอบและแยกหัวข้อเพื่อเช็คสิทธิ์รายวันแบบแยกหัวข้ออิสระต่อกัน
+    topic = None
+    if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
+        topic = "jataka"
+    elif "ไม้เท้า" in user_msg or "การงาน" in user_msg:
+        topic = "work"
+    elif "เหรียญ" in user_msg or "การเงิน" in user_msg:
+        topic = "money"
+    elif "ถ้วย" in user_msg or "ความรัก" in user_msg:
+        topic = "love"
+    elif "สุขภาพ" in user_msg:
+        topic = "health"
+    elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
+        topic = "obstacle"
+
+    if topic:
+        if not check_topic_limit(user_id, topic):
             try:
                 line_bot_api.push_message(
                     user_id,
-                    TextSendMessage(text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงประจำวันไปแล้ว โปรดรอรับคำทำนายใหม่อีกครั้งในวันพรุ่งนี้ครับ", quick_reply=get_quick_reply_menu())
+                    TextSendMessage(
+                        text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือรอรับคำทำนายใหม่ในวันพรุ่งนี้ครับ", 
+                        quick_reply=get_quick_reply_menu()
+                    )
                 )
             except Exception as e:
                 print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
             return
 
     dynamic_instruction = SYSTEM_INSTRUCTION
-    if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
+    if topic == "jataka":
         jataka_num = random.randint(1, 547)
         user_msg = (
             f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
@@ -259,19 +285,19 @@ def async_process_and_push(user_id, user_msg):
             f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
             f"ขอให้ภาษาคมคาย ลึกซึ้ง ตรงประเด็นครับศิษย์น้อง"
         )
-    elif "ไม้เท้า" in user_msg or "การงาน" in user_msg:
+    elif topic == "work":
         card_num = random.randint(1, 10)
         user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ อ่านสภาวะการงานและแนวทางแก้ไขในรูปแบบพุทธธรรม"
-    elif "เหรียญ" in user_msg or "การเงิน" in user_msg:
+    elif topic == "money":
         card_num = random.randint(1, 10)
         user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ วิเคราะห์กระแสเงินสดและสติในการบริหารเงิน"
-    elif "ถ้วย" in user_msg or "ความรัก" in user_msg:
+    elif topic == "love":
         card_num = random.randint(1, 10)
         user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
-    elif "สุขภาพ" in user_msg:
+    elif topic == "health":
         card_num = random.randint(1, 10)
         user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูแลรักษากายใจในมุมมองพุทธธรรม"
-    elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
+    elif topic == "obstacle":
         card_num = random.randint(1, 10)
         user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง' พร้อมวิธีตั้งสติฟันฝ่าอุปสรรคด้วยปัญญา"
 

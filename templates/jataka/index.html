@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>โพธิ Vision - เสี่ยงทายชาดก</title>
+    <!-- LINE LIFF SDK -->
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <link rel="stylesheet" href="/static/jataka/style.css">
+</head>
+<body>
+
+    <!-- ================= หน้าที่ 1: หน้าหลักสุ่มเปิดไพ่ ================= -->
+    <div id="main-screen" class="screen active">
+        <div class="header-banner">
+            <h1>โพธิ Vision</h1>
+            <p>เสี่ยงทายชาดก 547 ชาติ เพื่อชีวิตและแนวทางสติ</p>
+        </div>
+
+        <div class="card">
+            <div class="card-title">📜 ชาดกประจำวันของคุณ</div>
+            <div id="jataka-title" class="jataka-name">กำลังโหลดข้อมูลชาดก...</div>
+            <div id="jataka-barami" class="jataka-barami">...</div>
+        </div>
+
+        <div class="section-label">--- เลือกหมวดที่ต้องการสุ่มเปิดไพ่ ---</div>
+
+        <div class="category-grid">
+            <div class="category-btn" onclick="selectCategory('work')">💼 การงาน<br><small style="color:#777; font-weight:normal;">(ไม้เท้า)</small></div>
+            <div class="category-btn" onclick="selectCategory('money')">💰 การเงิน<br><small style="color:#777; font-weight:normal;">(เหรียญ)</small></div>
+            <div class="category-btn" onclick="selectCategory('love')">💖 ความรัก<br><small style="color:#777; font-weight:normal;">(ถ้วย)</small></div>
+            <div class="category-btn" onclick="selectCategory('health')">🧘‍♂️ สุขภาพ<br><small style="color:#777; font-weight:normal;">(ดาบ)</small></div>
+        </div>
+
+        <div class="sticky-bottom-container">
+            <button class="primary-btn" onclick="fetchRandomJataka()">🎲 สุ่มชาดกใหม่ / เขย่า</button>
+        </div>
+    </div>
+
+    <!-- ================= หน้าที่ 2: หน้าแสดงผลการทำนาย ================= -->
+    <div id="result-screen" class="screen">
+        <div class="header-banner">
+            <h1>ผลการทำนายชาดก</h1>
+            <p id="result-cat-title">ด้านการงาน</p>
+        </div>
+
+        <div class="card prediction-card">
+            <img id="result-img" class="prediction-img" src="" alt="Jataka Card">
+            <div id="result-keyword" class="keyword-tag">คีย์เวิร์ด</div>
+            
+            <div class="prediction-box">
+                <strong>🔮 ดวง 50% (สภาวะ):</strong>
+                <p id="result-predict" style="margin-top:4px; font-size:14px; color:#444;">...</p>
+            </div>
+
+            <div class="solution-box">
+                <strong>🧘‍♂️ ทางแก้ 50% (หลักธรรมะ):</strong>
+                <p id="result-solution" style="margin-top:4px; font-size:14px; color:#276749;">...</p>
+            </div>
+        </div>
+
+        <div class="inline-btns">
+            <button class="secondary-btn" onclick="showScreen('main-screen')">🔄 สุ่มหมวดอื่น</button>
+            <button class="secondary-btn" onclick="alert('อ่านเรื่องเต็มได้ในไลน์แชตกับศิษย์น้องครับ')">📜 อ่านเรื่องเต็ม</button>
+        </div>
+
+        <div class="sticky-bottom-container">
+            <button class="primary-btn" onclick="shareToLine()">📤 บันทึก / แชร์ลง LINE แชต</button>
+        </div>
+    </div>
+
+    <script src="/static/jataka/script.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>พระไตรปิฎกบาลีสยามรัฐ ฉบับบาลีศึกษา</title>
+    
+    <link rel="stylesheet" href="/static/pali/style.css">
+    <link rel="manifest" href="manifest.json">
+    
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="คลังพระไตรปิฎก">
+</head>
+<body>
+    <div class="app-container">
+        <!-- ส่วนหัว -->
+        <header class="app-header">
+            <h1>พระไตรปิฎกบาลีสยามรัฐ ฉบับบาลีศึกษา แปลคำบาลีไทย</h1>
+            
+            <div class="control-panel">
+                <select id="book-selector">
+                    <option value="">-- กรุณาเลือกเล่มที่ต้องการอ่าน --</option>
+                </select>
+            </div>
+        </header>
+
+        <!-- เนื้อหาหลัก -->
+        <main class="main-content">
+            <div id="pali-content">โปรดเลือกเล่มจากรายการด้านบน เพื่อเริ่มอ่านพระไตรปิฎก</div>
+            
+            <div id="translation-box"></div>
+            <div id="dictionary-box"></div>
+            
+            <div class="footer">
+                <button id="about-btn">เกี่ยวกับผู้เขียน</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- ป๊อปอัปคำแปล -->
+    <div id="popup"></div>
+
+    <!-- Modal ข้อมูลผู้เขียน -->
+    <div id="about-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <p>จัดทำขึ้นเป็นธรรมทาน แด่ พระภิกษุ สามเณร และผู้สนใจในธรรม ทุกท่าน และลูกชาย สามเณร ZEN ทศพล วัดระฆัง ที่อุทิศตนบวชเรียนพระบาลี ขอท่านทั้งหลาย อนุโมทนาร่วมกัน ได้กุศลผลบุญร่วมกันถ้วนหน้า เรารู้แล้วจักให้ผู้อื่นรู้ด้วย พุทโธ โหมิ .... </p>
+        </div>
+    </div>
+    
+    <script src="/static/pali/script.js" defer></script>
+</body>
+</html>

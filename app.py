@@ -5,23 +5,24 @@ import threading
 import sqlite3
 from datetime import datetime, timezone, timedelta
 import requests
-from flask import Flask, request, jsonify, abort
+from flask import Flask, request, jsonify, abort, render_template, send_from_directory
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, 
-    ImageMessage, QuickReply, QuickReplyButton, MessageAction,
+    ImageMessage, QuickReply, QuickReplyButton, MessageAction, URIAction,
     FlexSendMessage
 )
 import google.generativeai as genai
 from openai import OpenAI
 from PIL import Image
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# ดึงค่า Keys จาก Environment Variables
+# ดึงค่า Keys และ LIFF URL จาก Environment Variables
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
+LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')  # URL LIFF ของศิษย์พี่
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -63,7 +64,7 @@ def get_thailand_today():
     return datetime.now(tz_th).strftime('%Y-%m-%d')
 
 def check_topic_limit(user_id, topic):
-    today = get_thailand_today() # ใช้เวลาประเทศไทยในการเช็คตัดรอบเที่ยงคืน
+    today = get_thailand_today() # ตัดรอบเที่ยงคืนเวลาไทย
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute('SELECT last_date FROM user_topic_limits WHERE user_id = ? AND topic = ?', (user_id, topic))
@@ -71,7 +72,7 @@ def check_topic_limit(user_id, topic):
     
     if row and row[0] == today:
         conn.close()
-        return False # เคยใช้สิทธิ์ของหัวข้อนี้ในวันนี้ไปแล้ว
+        return False
     
     cursor.execute('''
         INSERT OR REPLACE INTO user_topic_limits (user_id, topic, last_date)
@@ -79,10 +80,10 @@ def check_topic_limit(user_id, topic):
     ''', (user_id, topic, today))
     conn.commit()
     conn.close()
-    return True # ยังไม่เคยใช้สิทธิ์ของหัวข้อนี้ในวันนี้ อนุญาตให้ทำนายได้
+    return True
 
 def get_quick_reply_menu():
-    """สร้าง Quick Reply 7 ปุ่มเมนูหลัก"""
+    """สร้าง Quick Reply 8 ปุ่ม (รวมปุ่มเปิด LIFF เว็บแปลพระไตรปิฎก)"""
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
@@ -90,11 +91,12 @@ def get_quick_reply_menu():
         QuickReplyButton(action=MessageAction(label="❤️ ความรัก", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
         QuickReplyButton(action=MessageAction(label="🛡️ สุขภาพ", text="ขอคำทำนายสุขภาพจากไพ่ดาบ")),
         QuickReplyButton(action=MessageAction(label="⚔️ อุปสรรค", text="ขอคำทำนายอุปสรรคจากไพ่ดาบ")),
-        QuickReplyButton(action=MessageAction(label="✍️ เรื่องอื่นๆ", text="ขอคำทำนายเรื่องอื่นๆ"))
+        QuickReplyButton(action=MessageAction(label="✍️ เรื่องอื่นๆ", text="ขอคำทำนายเรื่องอื่นๆ")),
+        QuickReplyButton(action=URIAction(label="📖 เณรZenAiแปลพระไตรปิฏก", uri=LIFF_URL))
     ])
 
 def create_menu_flex_card():
-    """สร้าง Flex Message เมนูหลัก 7 ปุ่ม"""
+    """สร้าง Flex Message เมนูหลัก รวมปุ่มเปิดเว็บแปลพระไตรปิฎก"""
     flex_contents = {
         "type": "bubble",
         "hero": {
@@ -117,7 +119,7 @@ def create_menu_flex_card():
                 },
                 {
                     "type": "text",
-                    "text": "เลือกหัวข้อ หรือพิมพ์เรื่องที่ต้องการดูดวงเข้ามาได้เลยครับ",
+                    "text": "เลือกหัวข้อ ขอคำทำนาย หรือใช้งานแอปแปลพระไตรปิฎกได้ที่ด้านล่างนี้ครับ",
                     "wrap": True,
                     "color": "#666666",
                     "size": "sm",
@@ -165,11 +167,21 @@ def create_menu_flex_card():
                     "type": "button",
                     "style": "secondary",
                     "action": {"type": "message", "label": "✍️ เรื่องอื่นๆ (พิมพ์เรื่องที่ต้องการ)", "text": "ขอคำทำนายเรื่องอื่นๆ"}
+                },
+                {
+                    "type": "button",
+                    "style": "primary",
+                    "color": "#06C755",
+                    "action": {
+                        "type": "uri",
+                        "label": "📖 เณรZenAiแปลพระไตรปิฏก",
+                        "uri": LIFF_URL
+                    }
                 }
             ]
         }
     }
-    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ โพธิ Vision", contents=flex_contents)
+    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ & แปลพระไตรปิฎก โพธิ Vision", contents=flex_contents)
 
 def trigger_loading(user_id, seconds):
     try:
@@ -184,16 +196,15 @@ def trigger_loading(user_id, seconds):
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
 
 def start_loading_animation(user_id):
-    """เปิดใช้งานหลอดเวลา พร้อมส่งสัญญาณ Event กลับไปเพื่อควบคุมการปิด"""
-    is_finished = threading.Event()
+    fin_event = threading.Event()
     trigger_loading(user_id, 60)
     
     def second_wave():
-        if not is_finished.is_set():
+        if not fin_event.is_set():
             trigger_loading(user_id, 60)
             
     threading.Timer(55.0, second_wave).start()
-    return is_finished
+    return fin_event
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
@@ -244,7 +255,6 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     return "ขออภัยครับศิษย์พี่ ขณะนี้ศิษย์น้องไม่สามารถประมวลผลได้ชั่วคราว โปรดลองใหม่อีกครั้งนะครับ"
 
 def async_process_and_push(user_id, user_msg):
-    # คำสั่งเรียกดูเมนูหลัก
     trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
     if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
         trigger_loading(user_id, 5)
@@ -255,7 +265,6 @@ def async_process_and_push(user_id, user_msg):
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
 
-    # คำสั่งกดปุ่มเรื่องอื่นๆ เพื่อแนะนำให้พิมพ์ข้อความเข้ามา
     if user_msg in ["ขอคำทำนายเรื่องอื่นๆ", "เรื่องอื่นๆ"]:
         trigger_loading(user_id, 3)
         try:
@@ -270,7 +279,6 @@ def async_process_and_push(user_id, user_msg):
         except Exception as e:
             print(f"--- DEBUG Push Error: {e} ---", flush=True)
 
-    # ตรวจสอบและแยกหัวข้อเฉพาะ 6 เมนูหลักเพื่อจำกัดสิทธิ์
     topic = None
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         topic = "jataka"
@@ -285,7 +293,6 @@ def async_process_and_push(user_id, user_msg):
     elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
         topic = "obstacle"
 
-    # หากตรงกับ 6 เมนูหลัก ให้เช็คจำกัดสิทธิ์รายวัน
     if topic:
         if not check_topic_limit(user_id, topic):
             trigger_loading(user_id, 5)
@@ -293,7 +300,7 @@ def async_process_and_push(user_id, user_msg):
                 line_bot_api.push_message(
                     user_id,
                     TextSendMessage(
-                        text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือรอรับคำทำนายใหม่ในวันพรุ่งนี้ครับ", 
+                        text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือกดปุ่มแปลพระไตรปิฎกด้านล่างได้เลยครับ", 
                         quick_reply=get_quick_reply_menu()
                     )
                 )
@@ -301,7 +308,6 @@ def async_process_and_push(user_id, user_msg):
                 print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
             return
 
-    # เริ่มเปิดหลอดเวลาสำหรับการทำนาย
     fin_event = start_loading_animation(user_id)
 
     try:
@@ -320,19 +326,19 @@ def async_process_and_push(user_id, user_msg):
             )
         elif topic == "work":
             card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ อ่านสภาวะการงานและแนวทางแก้ไขในรูปแบบพุทธธรรม"
+            user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ"
         elif topic == "money":
             card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ วิเคราะห์กระแสเงินสดและสติในการบริหารเงิน"
+            user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ"
         elif topic == "love":
             card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
+            user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์'"
         elif topic == "health":
             card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูดูแลรักษากายใจในมุมมองพุทธธรรม"
+            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บ'"
         elif topic == "obstacle":
             card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง' พร้อมวิธีตั้งสติฟันฝ่าอุปสรรคด้วยปัญญา"
+            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง'"
 
         reply_text = generate_ai_response(dynamic_instruction, user_msg)
         quick_reply = get_quick_reply_menu()
@@ -346,9 +352,27 @@ def async_process_and_push(user_id, user_msg):
     finally:
         fin_event.set()
 
+# ==================== ROUTE หน้าเว็บ ====================
+
 @app.route("/", methods=['GET'])
-def health_check():
-    return "Podhi Vision Line Bot is running smoothly!", 200
+@app.route("/jataka", methods=['GET'])
+def jataka_page():
+    """เสิร์ฟหน้าเสี่ยงทายชาดก"""
+    try:
+        return render_template('jataka/index.html')
+    except Exception:
+        return "Podhi Vision System is Running!", 200
+
+@app.route("/pali", methods=['GET'])
+@app.route("/liff", methods=['GET'])
+def pali_page():
+    """เสิร์ฟหน้าแปลพระไตรปิฎก"""
+    try:
+        return render_template('pali/index.html')
+    except Exception:
+        return "Pali Translator System is Running!", 200
+
+# ==================== ROUTE API & LINE BOT ====================
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -360,10 +384,8 @@ def callback():
         abort(400)
     return 'OK'
 
-# --- เพิ่ม API สำหรับรับคำแปลบาลีจากหน้าเว็บ (พร้อม CORS) ---
 @app.route('/api/translate-word', methods=['POST', 'OPTIONS'])
 def translate_pali_word():
-    # รองรับ Preflight Request จากเบราว์เซอร์
     if request.method == 'OPTIONS':
         response = jsonify({'status': 'ok'})
         response.headers.add('Access-Control-Allow-Origin', '*')

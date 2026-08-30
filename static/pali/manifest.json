@@ -1,0 +1,13 @@
+{
+  "name": "คลังพระไตรปิฎกบาลี",
+  "short_name": "คลังพระไตรปิฎก",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "icons": [
+    {
+      "src": "icon.png",
+      "sizes": "512x512", 
+      "type": "image/png"
+    }
+  ]
+}

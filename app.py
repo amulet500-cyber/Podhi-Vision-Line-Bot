@@ -5,13 +5,12 @@ import threading
 import sqlite3
 from datetime import datetime, timezone, timedelta
 import requests
-from flask import Flask, request, jsonify, abort, render_template, send_from_directory
+from flask import Flask, request, jsonify, abort, render_template
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, 
-    ImageMessage, QuickReply, QuickReplyButton, MessageAction, URIAction,
-    FlexSendMessage
+    ImageMessage, QuickReply, QuickReplyButton, MessageAction, URIAction
 )
 import google.generativeai as genai
 from openai import OpenAI
@@ -27,22 +26,24 @@ LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# เลือกเฉพาะโมเดลความเร็วสูง ตัดโมเดล R1 ที่คิดนานออก
+# รายชื่อโมเดลฟรีจาก OpenRouter (เน้นความเร็ว)
 FREE_MODELS = [
     "google/gemini-2.0-flash-lite-001:free",
     "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen-2.5-7b-instruct:free",
     "mistralai/mistral-7b-instruct:free"
 ]
 
+# System Instruction ปรับให้ตอบได้ทุกเรื่องแบบผู้ช่วย AI
 SYSTEM_INSTRUCTION = (
-    "คุณคือ 'ศิษย์น้อง' ผู้ช่วย AI และหมอดูพุทธธรรมประจำระบบ 'โพธิ Vision'\n"
+    "คุณคือ 'ศิษย์น้อง' ผู้ช่วย AI ประจำระบบ 'โพธิ Vision'\n"
     "หน้าที่หลักของคุณคือ:\n"
-    "1. ให้คำปรึกษา ทำนายดวงชะตา นำเสนอหลักธรรมะ ชาดก 547 ชาติ ไพ่ทาโรต์ และคำปรึกษาชีวิตทุกเรื่องด้วยความลึกซึ้ง แม่นยำ และมีจิตเมตตา\n"
-    "2. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ\n"
-    "3. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
+    "1. ตอบคำถาม ให้คำปรึกษา เขียนโค้ด แปลภาษา วิเคราะห์ข้อมูล และทำนายดวงชะตาพุทธธรรม/ชาดก ได้ทุกเรื่องตามที่ผู้ใช้ถาม\n"
+    "2. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ ด้วยความนอบน้อมและมีจิตเมตตา\n"
+    "3. ภาษาที่ใช้: กระชับ ชัดเจน สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์แปลกปลอม"
 )
 
-# ตั้งค่าฐานข้อมูล SQLite สำหรับจำกัดสิทธิ์แยกตามหัวข้อ (รายวัน)
+# ตั้งค่าฐานข้อมูล SQLite สำหรับจำกัดสิทธิ์ดูดวงรายวัน
 def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
@@ -60,7 +61,7 @@ def init_db():
 init_db()
 
 def get_thailand_today():
-    """ดึงวันที่ปัจจุบันโดยอิงจากเวลาประเทศไทย (UTC+7)"""
+    """ดึงวันที่ปัจจุบัน เวลาประเทศไทย (UTC+7)"""
     tz_th = timezone(timedelta(hours=7))
     return datetime.now(tz_th).strftime('%Y-%m-%d')
 
@@ -84,7 +85,7 @@ def check_topic_limit(user_id, topic):
     return True
 
 def get_quick_reply_menu():
-    """สร้าง Quick Reply ปุ่มลอยด้านล่าง (ปัดซ้าย-ขวาได้)"""
+    """สร้าง Quick Reply แบบ Label ปุ่มลอยด้านล่าง สะดวกไม่บังหน้าจอ"""
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
@@ -92,49 +93,11 @@ def get_quick_reply_menu():
         QuickReplyButton(action=MessageAction(label="❤️ ความรัก", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
         QuickReplyButton(action=MessageAction(label="🛡️ สุขภาพ", text="ขอคำทำนายสุขภาพจากไพ่ดาบ")),
         QuickReplyButton(action=MessageAction(label="⚔️ อุปสรรค", text="ขอคำทำนายอุปสรรคจากไพ่ดาบ")),
-        QuickReplyButton(action=MessageAction(label="✍️ เรื่องอื่นๆ", text="ขอคำทำนายเรื่องอื่นๆ")),
+        QuickReplyButton(action=MessageAction(label="✍️ พิมพ์ถามได้ทุกเรื่อง", text="ขอคำปรึกษา")),
         QuickReplyButton(action=URIAction(label="📖 เณรZenAiแปลพระไตรปิฏก", uri=LIFF_URL))
     ])
 
-def create_carousel_menu():
-    """สร้าง Flex Carousel แบบแนวนอน เลื่อนซ้าย-ขวาได้ ไม่บดบังข้อความแชท"""
-    cards_data = [
-        {"title": "🔮 ดวงวันนี้", "sub": "สุ่มชาดก 547 ชาติ", "btn": "สุ่มดวงวันนี้", "text": "ขอคำทำนายดวงวันนี้จากชาดก", "color": "#1DB446"},
-        {"title": "💼 การงาน", "sub": "ทำนายด้วยไพ่ไม้เท้า", "btn": "เปิดไพ่การงาน", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า", "color": "#2A5298"},
-        {"title": "💰 การเงิน", "sub": "ทำนายด้วยไพ่เหรียญ", "btn": "เปิดไพ่การเงิน", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ", "color": "#E67E22"},
-        {"title": "❤️ ความรัก", "sub": "ทำนายด้วยไพ่ถ้วย", "btn": "เปิดไพ่ความรัก", "text": "ขอคำทำนายความรักจากไพ่ถ้วย", "color": "#E91E63"},
-        {"title": "🛡️ สุขภาพ", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่สุขภาพ", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ", "color": "#8E44AD"},
-        {"title": "⚔️ อุปสรรค", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่อุปสรรค", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ", "color": "#C0392B"},
-        {"title": "📖 แปลบาลี", "sub": "เณรZenAiแปลพระไตรปิฎก", "btn": "เปิดแอป LIFF", "uri": LIFF_URL, "color": "#06C755"}
-    ]
-
-    bubbles = []
-    for c in cards_data:
-        action = {"type": "uri", "label": c["btn"], "uri": c["uri"]} if "uri" in c else {"type": "message", "label": c["btn"], "text": c["text"]}
-        bubble = {
-            "type": "bubble",
-            "size": "micro",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {"type": "text", "text": c["title"], "weight": "bold", "size": "sm", "color": c["color"]},
-                    {"type": "text", "text": c["sub"], "size": "xs", "color": "#777777", "wrap": True, "margin": "xs"}
-                ]
-            },
-            "footer": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {"type": "button", "style": "primary", "color": c["color"], "height": "sm", "action": action}
-                ]
-            }
-        }
-        bubbles.append(bubble)
-
-    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ (เลื่อนซ้าย-ขวา)", contents={"type": "carousel", "contents": bubbles})
-
-def trigger_loading(user_id, seconds):
+def trigger_loading(user_id, seconds=30):
     try:
         url = "https://api.line.me/v2/bot/chat/loading/start"
         headers = {
@@ -145,11 +108,6 @@ def trigger_loading(user_id, seconds):
         requests.post(url, headers=headers, json=data, timeout=3)
     except Exception as e:
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
-
-def start_loading_animation(user_id):
-    fin_event = threading.Event()
-    trigger_loading(user_id, 30)
-    return fin_event
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
@@ -198,35 +156,23 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     if not image_bytes:
         res = ask_openrouter(system_instruction, user_msg)
         if res: return res
-    return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบประมวลผลปลายทางขัดข้องชั่วคราว โปรดลองกดใหม่อีกครั้งนะครับ"
+    return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบประมวลผลปลายทางขัดข้องชั่วคราว โปรดลองถามใหม่อีกครั้งนะครับ"
 
 def send_line_reply(reply_token, user_id, message_obj):
-    """ส่งข้อความตอบกลับด้วย reply_token หาก Token หมดอายุ ให้ส่งแบบ push_message"""
+    """ส่งตอบกลับด้วย reply_token หาก Token หมดอายุ ให้สลับส่ง push_message อัตโนมัติ"""
     try:
         line_bot_api.reply_message(reply_token, message_obj)
     except Exception as e:
-        print(f"--- DEBUG Reply Failed, attempting Push: {e} ---", flush=True)
+        print(f"--- DEBUG Reply Expired/Failed, Push fallback: {e} ---", flush=True)
         try:
             line_bot_api.push_message(user_id, message_obj)
         except Exception as pe:
             print(f"--- DEBUG Push Failed: {pe} ---", flush=True)
 
 def async_process_and_reply(reply_token, user_id, user_msg):
-    # ตรวจสอบการเรียกดูเมนู
-    menu_triggers = ["เมนู", "เริ่มต้น", "สวัสดี", "หวัดดี", "help", "menu"]
-    if any(k in user_msg.lower() for k in menu_triggers) and not any(k in user_msg for k in ["ชาดก", "ไพ่", "ทำนาย", "ดวง"]):
-        carousel_card = create_carousel_menu()
-        send_line_reply(reply_token, user_id, carousel_card)
-        return
+    trigger_loading(user_id, 30)
 
-    if user_msg in ["ขอคำทำนายเรื่องอื่นๆ", "เรื่องอื่นๆ"]:
-        msg = TextSendMessage(
-            text="ศิษย์พี่ต้องการดูดวงหรือขอคำปรึกษาธรรมะในเรื่องใด สามารถพิมพ์ข้อความรายละเอียดส่งมาให้ศิษย์น้องได้เลยครับ 🙏",
-            quick_reply=get_quick_reply_menu()
-        )
-        send_line_reply(reply_token, user_id, msg)
-        return
-
+    # ตรวจสอบการกดดูดวงเฉพาะหัวข้อเพื่อเช็คสิทธิ์รายวัน
     topic = None
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         topic = "jataka"
@@ -241,57 +187,53 @@ def async_process_and_reply(reply_token, user_id, user_msg):
     elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
         topic = "obstacle"
 
+    # ถ้าตรงกับหัวข้อดูดวง 6 เมนูหลัก ให้เช็คจำกัดสิทธิ์รายวัน
     if topic:
         if not check_topic_limit(user_id, topic):
             msg = TextSendMessage(
-                text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือกดปุ่มแปลพระไตรปิฎกด้านล่างได้เลยครับ", 
+                text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือพิมพ์สอบถามเรื่องอื่นๆ ได้เลยครับ", 
                 quick_reply=get_quick_reply_menu()
             )
             send_line_reply(reply_token, user_id, msg)
             return
 
-    fin_event = start_loading_animation(user_id)
+    # กำหนด Prompt สำหรับส่งให้ AI
+    dynamic_instruction = SYSTEM_INSTRUCTION
+    ai_prompt = user_msg
 
-    try:
-        dynamic_instruction = SYSTEM_INSTRUCTION
-        if topic == "jataka":
-            jataka_num = random.randint(1, 547)
-            user_msg = (
-                f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
-                f"และขอรูปแบบการแสดงผลตามโครงสร้างนี้เป๊ะๆ:\n\n"
-                f"[{jataka_num}] ชื่อชาดก\n"
-                f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น ห้ามยาวยืดเยื้อ)\n"
-                f"บารมีประจำชาติ : ...บารมี\n"
-                f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญ)\n"
-                f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
-                f"ขอให้ภาษาคมคาย ลึกซึ้ง ตรงประเด็นครับศิษย์น้อง"
-            )
-        elif topic == "work":
-            card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ"
-        elif topic == "money":
-            card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ"
-        elif topic == "love":
-            card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์'"
-        elif topic == "health":
-            card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บ'"
-        elif topic == "obstacle":
-            card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง'"
+    if topic == "jataka":
+        jataka_num = random.randint(1, 547)
+        ai_prompt = (
+            f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
+            f"และขอรูปแบบการแสดงผลตามโครงสร้างนี้เป๊ะๆ:\n\n"
+            f"[{jataka_num}] ชื่อชาดก\n"
+            f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น ห้ามยาวยืดเยื้อ)\n"
+            f"บารมีประจำชาติ : ...บารมี\n"
+            f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญ)\n"
+            f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
+            f"ขอให้ภาษาคมคาย ลึกซึ้ง ตรงประเด็นครับศิษย์น้อง"
+        )
+    elif topic == "work":
+        card_num = random.randint(1, 10)
+        ai_prompt = f"สุ่มไพ่ไม้เท้า 1 ใบจากสำรับ 1-10 (เช่น ไพ่ไม้เท้าใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การงาน' ให้ลึกซึ้ง แม่นยำ"
+    elif topic == "money":
+        card_num = random.randint(1, 10)
+        ai_prompt = f"สุ่มไพ่เหรียญ 1 ใบจากสำรับ 1-10 (เช่น ไพ่เหรียญใบที่ {card_num}) ทำนายดวงชะตาด้าน 'การเงิน' ให้ลึกซึ้ง แม่นยำ"
+    elif topic == "love":
+        card_num = random.randint(1, 10)
+        ai_prompt = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์'"
+    elif topic == "health":
+        card_num = random.randint(1, 10)
+        ai_prompt = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บ'"
+    elif topic == "obstacle":
+        card_num = random.randint(1, 10)
+        ai_prompt = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง'"
 
-        reply_text = generate_ai_response(dynamic_instruction, user_msg)
-        quick_reply = get_quick_reply_menu()
-        msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
-        send_line_reply(reply_token, user_id, msg)
-
-    except Exception as e:
-        print(f"--- DEBUG Process Error: {e} ---", flush=True)
-        send_line_reply(reply_token, user_id, TextSendMessage(text="ขออภัยครับศิษย์พี่ เกิดข้อผิดพลาดในระบบ โปรดลองอีกครั้งครับ"))
-    finally:
-        fin_event.set()
+    # หากไม่ใช่ 6 หัวข้อดูดวง (topic = None) ระบบจะใช้ข้อความ ai_prompt ดั้งเดิมของผู้ใช้ และส่งให้ AI ตอบได้ทุกเรื่องทันที
+    reply_text = generate_ai_response(dynamic_instruction, ai_prompt)
+    quick_reply = get_quick_reply_menu()
+    msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
+    send_line_reply(reply_token, user_id, msg)
 
 # ==================== ROUTE หน้าเว็บ ====================
 
@@ -361,7 +303,7 @@ def handle_message(event):
 def handle_image(event):
     user_id = event.source.user_id
     reply_token = event.reply_token
-    fin_event = start_loading_animation(user_id)
+    trigger_loading(user_id, 30)
     try:
         message_content = line_bot_api.get_message_content(event.message.id)
         image_bytes = message_content.content
@@ -369,8 +311,6 @@ def handle_image(event):
         reply_text = generate_ai_response(vision_instruction, "ช่วยอธิบาย หรือวิเคราะห์สิ่งที่เห็นในภาพนี้ให้ศิษย์พี่หน่อยครับ", image_bytes)
     except Exception as e:
         reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับศิษย์พี่"
-    finally:
-        fin_event.set()
     
     quick_reply = get_quick_reply_menu()
     msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)

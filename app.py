@@ -27,10 +27,11 @@ LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
+# เลือกเฉพาะโมเดลความเร็วสูง ตัดโมเดล R1 ที่คิดนานออก
 FREE_MODELS = [
+    "google/gemini-2.0-flash-lite-001:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "deepseek/deepseek-r1:free",
-    "openrouter/auto"
+    "mistralai/mistral-7b-instruct:free"
 ]
 
 SYSTEM_INSTRUCTION = (
@@ -141,19 +142,13 @@ def trigger_loading(user_id, seconds):
             "Content-Type": "application/json"
         }
         data = {"chatId": user_id, "loadingSeconds": seconds}
-        requests.post(url, headers=headers, json=data, timeout=5)
+        requests.post(url, headers=headers, json=data, timeout=3)
     except Exception as e:
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
 
 def start_loading_animation(user_id):
     fin_event = threading.Event()
-    trigger_loading(user_id, 60)
-    
-    def second_wave():
-        if not fin_event.is_set():
-            trigger_loading(user_id, 60)
-            
-    threading.Timer(55.0, second_wave).start()
+    trigger_loading(user_id, 30)
     return fin_event
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
@@ -165,9 +160,9 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
             prompt = user_msg or "ช่วยวิเคราะห์รูปภาพนี้ในมุมมองธรรมะ..."
-            response = model.generate_content([prompt, img])
+            response = model.generate_content([prompt, img], request_options={"timeout": 10})
         else:
-            response = model.generate_content(user_msg)
+            response = model.generate_content(user_msg, request_options={"timeout": 10})
         if response and response.text:
             return response.text.strip()
     except Exception as e:
@@ -187,12 +182,13 @@ def ask_openrouter(system_instruction, user_msg):
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_instruction}, {"role": "user", "content": user_msg}],
-                timeout=15
+                timeout=7
             )
             if response and response.choices:
                 text = response.choices[0].message.content
                 if text: return text.strip()
-        except Exception:
+        except Exception as e:
+            print(f"--- DEBUG OpenRouter ({model_name}) Error: {e} ---", flush=True)
             continue
     return None
 
@@ -202,30 +198,28 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     if not image_bytes:
         res = ask_openrouter(system_instruction, user_msg)
         if res: return res
-    return "ขออภัยครับศิษย์พี่ ขณะนี้ศิษย์น้องไม่สามารถประมวลผลได้ชั่วคราว โปรดลองใหม่อีกครั้งนะครับ"
+    return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบประมวลผลปลายทางขัดข้องชั่วคราว โปรดลองกดใหม่อีกครั้งนะครับ"
 
 def send_line_reply(reply_token, user_id, message_obj):
-    """ส่งข้อความตอบกลับด้วย reply_token ก่อน หากล้มเหลวให้ fallback เป็น push_message"""
+    """ส่งข้อความตอบกลับด้วย reply_token หาก Token หมดอายุ ให้ส่งแบบ push_message"""
     try:
         line_bot_api.reply_message(reply_token, message_obj)
     except Exception as e:
-        print(f"--- DEBUG Reply Failed, falling back to Push: {e} ---", flush=True)
+        print(f"--- DEBUG Reply Failed, attempting Push: {e} ---", flush=True)
         try:
             line_bot_api.push_message(user_id, message_obj)
         except Exception as pe:
-            print(f"--- DEBUG Push Also Failed: {pe} ---", flush=True)
+            print(f"--- DEBUG Push Failed: {pe} ---", flush=True)
 
 def async_process_and_reply(reply_token, user_id, user_msg):
     # ตรวจสอบการเรียกดูเมนู
     menu_triggers = ["เมนู", "เริ่มต้น", "สวัสดี", "หวัดดี", "help", "menu"]
     if any(k in user_msg.lower() for k in menu_triggers) and not any(k in user_msg for k in ["ชาดก", "ไพ่", "ทำนาย", "ดวง"]):
-        trigger_loading(user_id, 5)
         carousel_card = create_carousel_menu()
         send_line_reply(reply_token, user_id, carousel_card)
         return
 
     if user_msg in ["ขอคำทำนายเรื่องอื่นๆ", "เรื่องอื่นๆ"]:
-        trigger_loading(user_id, 3)
         msg = TextSendMessage(
             text="ศิษย์พี่ต้องการดูดวงหรือขอคำปรึกษาธรรมะในเรื่องใด สามารถพิมพ์ข้อความรายละเอียดส่งมาให้ศิษย์น้องได้เลยครับ 🙏",
             quick_reply=get_quick_reply_menu()
@@ -249,7 +243,6 @@ def async_process_and_reply(reply_token, user_id, user_msg):
 
     if topic:
         if not check_topic_limit(user_id, topic):
-            trigger_loading(user_id, 5)
             msg = TextSendMessage(
                 text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือกดปุ่มแปลพระไตรปิฎกด้านล่างได้เลยครับ", 
                 quick_reply=get_quick_reply_menu()
@@ -296,6 +289,7 @@ def async_process_and_reply(reply_token, user_id, user_msg):
 
     except Exception as e:
         print(f"--- DEBUG Process Error: {e} ---", flush=True)
+        send_line_reply(reply_token, user_id, TextSendMessage(text="ขออภัยครับศิษย์พี่ เกิดข้อผิดพลาดในระบบ โปรดลองอีกครั้งครับ"))
     finally:
         fin_event.set()
 
@@ -304,7 +298,6 @@ def async_process_and_reply(reply_token, user_id, user_msg):
 @app.route("/", methods=['GET'])
 @app.route("/jataka", methods=['GET'])
 def jataka_page():
-    """เสิร์ฟหน้าเสี่ยงทายชาดก"""
     try:
         return render_template('jataka/index.html')
     except Exception:
@@ -313,7 +306,6 @@ def jataka_page():
 @app.route("/pali", methods=['GET'])
 @app.route("/liff", methods=['GET'])
 def pali_page():
-    """เสิร์ฟหน้าแปลพระไตรปิฎก"""
     try:
         return render_template('pali/index.html')
     except Exception:

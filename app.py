@@ -360,6 +360,35 @@ def callback():
         abort(400)
     return 'OK'
 
+# --- เพิ่ม API สำหรับรับคำแปลบาลีจากหน้าเว็บ (พร้อม CORS) ---
+@app.route('/api/translate-word', methods=['POST', 'OPTIONS'])
+def translate_pali_word():
+    # รองรับ Preflight Request จากเบราว์เซอร์
+    if request.method == 'OPTIONS':
+        response = jsonify({'status': 'ok'})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+        return response, 200
+
+    data = request.get_json() or {}
+    word = data.get('word', '').strip()
+    
+    if not word:
+        res = jsonify({'translation': 'ไม่พบคำศัพท์'})
+        res.headers.add('Access-Control-Allow-Origin', '*')
+        return res, 400
+    
+    pali_instruction = (
+        "คุณคือผู้เชี่ยวชาญด้านภาษาบาลีหน้าที่ของคุณคือแปลคำศัพท์ภาษาบาลีเป็นภาษาไทย "
+        "ตอบให้กระชับ ชัดเจน ตรงประเด็น ความหมายสั้นๆ ไม่ต้องมีคำเกริ่นนำ"
+    )
+    prompt = f"แปลคำศัพท์ภาษาบาลีคำว่า '{word}' เป็นภาษาไทย ขอความหมายกระชับ ชัดเจน"
+    result = generate_ai_response(pali_instruction, prompt)
+    
+    res = jsonify({'translation': f"{word} – {result}"})
+    res.headers.add('Access-Control-Allow-Origin', '*')
+    return res
+
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_msg = event.message.text.strip()

@@ -22,7 +22,7 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 # ดึงค่า Keys และ LIFF URL จาก Environment Variables
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')  # URL LIFF ของศิษย์พี่
+LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -64,7 +64,7 @@ def get_thailand_today():
     return datetime.now(tz_th).strftime('%Y-%m-%d')
 
 def check_topic_limit(user_id, topic):
-    today = get_thailand_today() # ตัดรอบเที่ยงคืนเวลาไทย
+    today = get_thailand_today()
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
     cursor.execute('SELECT last_date FROM user_topic_limits WHERE user_id = ? AND topic = ?', (user_id, topic))
@@ -83,7 +83,7 @@ def check_topic_limit(user_id, topic):
     return True
 
 def get_quick_reply_menu():
-    """สร้าง Quick Reply 8 ปุ่ม (รวมปุ่มเปิด LIFF เว็บแปลพระไตรปิฎก)"""
+    """สร้าง Quick Reply ปุ่มลอยด้านล่าง (ปัดซ้าย-ขวาได้)"""
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
@@ -95,93 +95,43 @@ def get_quick_reply_menu():
         QuickReplyButton(action=URIAction(label="📖 เณรZenAiแปลพระไตรปิฏก", uri=LIFF_URL))
     ])
 
-def create_menu_flex_card():
-    """สร้าง Flex Message เมนูหลัก รวมปุ่มเปิดเว็บแปลพระไตรปิฎก"""
-    flex_contents = {
-        "type": "bubble",
-        "hero": {
-            "type": "image",
-            "url": "https://images.unsplash.com/photo-1507692049790-de58290a4334?w=600",
-            "size": "full",
-            "aspectRatio": "20:13",
-            "aspectMode": "cover"
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {
-                    "type": "text",
-                    "text": "🔮 โพธิ Vision พุทธธรรมพยากรณ์",
-                    "weight": "bold",
-                    "size": "lg",
-                    "color": "#1DB446"
-                },
-                {
-                    "type": "text",
-                    "text": "เลือกหัวข้อ ขอคำทำนาย หรือใช้งานแอปแปลพระไตรปิฎกได้ที่ด้านล่างนี้ครับ",
-                    "wrap": True,
-                    "color": "#666666",
-                    "size": "sm",
-                    "margin": "md"
-                }
-            ]
-        },
-        "footer": {
-            "type": "box",
-            "layout": "vertical",
-            "spacing": "sm",
-            "contents": [
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "color": "#1DB446",
-                    "action": {"type": "message", "label": "🔮 ดวงวันนี้ (ชาดก)", "text": "ขอคำทำนายดวงวันนี้จากชาดก"}
-                },
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "action": {"type": "message", "label": "💼 การงาน (ไม้เท้า)", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า"}
-                },
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "action": {"type": "message", "label": "💰 การเงิน (เหรียญ)", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ"}
-                },
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "action": {"type": "message", "label": "❤️ ความรัก (ถ้วย)", "text": "ขอคำทำนายความรักจากไพ่ถ้วย"}
-                },
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "action": {"type": "message", "label": "🛡️ สุขภาพ (ดาบ)", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ"}
-                },
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "action": {"type": "message", "label": "⚔️ อุปสรรค (ดาบ)", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ"}
-                },
-                {
-                    "type": "button",
-                    "style": "secondary",
-                    "action": {"type": "message", "label": "✍️ เรื่องอื่นๆ (พิมพ์เรื่องที่ต้องการ)", "text": "ขอคำทำนายเรื่องอื่นๆ"}
-                },
-                {
-                    "type": "button",
-                    "style": "primary",
-                    "color": "#06C755",
-                    "action": {
-                        "type": "uri",
-                        "label": "📖 เณรZenAiแปลพระไตรปิฏก",
-                        "uri": LIFF_URL
-                    }
-                }
-            ]
+def create_carousel_menu():
+    """สร้าง Flex Carousel แบบแนวนอน เลื่อนซ้าย-ขวาได้ ไม่บดบังข้อความแชท"""
+    cards_data = [
+        {"title": "🔮 ดวงวันนี้", "sub": "สุ่มชาดก 547 ชาติ", "btn": "สุ่มดวงวันนี้", "text": "ขอคำทำนายดวงวันนี้จากชาดก", "color": "#1DB446"},
+        {"title": "💼 การงาน", "sub": "ทำนายด้วยไพ่ไม้เท้า", "btn": "เปิดไพ่การงาน", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า", "color": "#2A5298"},
+        {"title": "💰 การเงิน", "sub": "ทำนายด้วยไพ่เหรียญ", "btn": "เปิดไพ่การเงิน", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ", "color": "#E67E22"},
+        {"title": "❤️ ความรัก", "sub": "ทำนายด้วยไพ่ถ้วย", "btn": "เปิดไพ่ความรัก", "text": "ขอคำทำนายความรักจากไพ่ถ้วย", "color": "#E91E63"},
+        {"title": "🛡️ สุขภาพ", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่สุขภาพ", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ", "color": "#8E44AD"},
+        {"title": "⚔️ อุปสรรค", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่อุปสรรค", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ", "color": "#C0392B"},
+        {"title": "📖 แปลบาลี", "sub": "เณรZenAiแปลพระไตรปิฎก", "btn": "เปิดแอป LIFF", "uri": LIFF_URL, "color": "#06C755"}
+    ]
+
+    bubbles = []
+    for c in cards_data:
+        action = {"type": "uri", "label": c["btn"], "uri": c["uri"]} if "uri" in c else {"type": "message", "label": c["btn"], "text": c["text"]}
+        bubble = {
+            "type": "bubble",
+            "size": "micro",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": c["title"], "weight": "bold", "size": "sm", "color": c["color"]},
+                    {"type": "text", "text": c["sub"], "size": "xs", "color": "#777777", "wrap": True, "margin": "xs"}
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "button", "style": "primary", "color": c["color"], "height": "sm", "action": action}
+                ]
+            }
         }
-    }
-    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ & แปลพระไตรปิฎก โพธิ Vision", contents=flex_contents)
+        bubbles.append(bubble)
+
+    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ (เลื่อนซ้าย-ขวา)", contents={"type": "carousel", "contents": bubbles})
 
 def trigger_loading(user_id, seconds):
     try:
@@ -254,30 +204,34 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
         if res: return res
     return "ขออภัยครับศิษย์พี่ ขณะนี้ศิษย์น้องไม่สามารถประมวลผลได้ชั่วคราว โปรดลองใหม่อีกครั้งนะครับ"
 
-def async_process_and_push(user_id, user_msg):
-    trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
-    if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
-        trigger_loading(user_id, 5)
-        flex_card = create_menu_flex_card()
+def send_line_reply(reply_token, user_id, message_obj):
+    """ส่งข้อความตอบกลับด้วย reply_token ก่อน หากล้มเหลวให้ fallback เป็น push_message"""
+    try:
+        line_bot_api.reply_message(reply_token, message_obj)
+    except Exception as e:
+        print(f"--- DEBUG Reply Failed, falling back to Push: {e} ---", flush=True)
         try:
-            line_bot_api.push_message(user_id, flex_card)
-            return
-        except Exception as e:
-            print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
+            line_bot_api.push_message(user_id, message_obj)
+        except Exception as pe:
+            print(f"--- DEBUG Push Also Failed: {pe} ---", flush=True)
+
+def async_process_and_reply(reply_token, user_id, user_msg):
+    # ตรวจสอบการเรียกดูเมนู
+    menu_triggers = ["เมนู", "เริ่มต้น", "สวัสดี", "หวัดดี", "help", "menu"]
+    if any(k in user_msg.lower() for k in menu_triggers) and not any(k in user_msg for k in ["ชาดก", "ไพ่", "ทำนาย", "ดวง"]):
+        trigger_loading(user_id, 5)
+        carousel_card = create_carousel_menu()
+        send_line_reply(reply_token, user_id, carousel_card)
+        return
 
     if user_msg in ["ขอคำทำนายเรื่องอื่นๆ", "เรื่องอื่นๆ"]:
         trigger_loading(user_id, 3)
-        try:
-            line_bot_api.push_message(
-                user_id,
-                TextSendMessage(
-                    text="ศิษย์พี่ต้องการดูดวงหรือขอคำปรึกษาธรรมะในเรื่องใด สามารถพิมพ์ข้อความรายละเอียดส่งมาให้ศิษย์น้องได้เลยครับ 🙏",
-                    quick_reply=get_quick_reply_menu()
-                )
-            )
-            return
-        except Exception as e:
-            print(f"--- DEBUG Push Error: {e} ---", flush=True)
+        msg = TextSendMessage(
+            text="ศิษย์พี่ต้องการดูดวงหรือขอคำปรึกษาธรรมะในเรื่องใด สามารถพิมพ์ข้อความรายละเอียดส่งมาให้ศิษย์น้องได้เลยครับ 🙏",
+            quick_reply=get_quick_reply_menu()
+        )
+        send_line_reply(reply_token, user_id, msg)
+        return
 
     topic = None
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
@@ -296,16 +250,11 @@ def async_process_and_push(user_id, user_msg):
     if topic:
         if not check_topic_limit(user_id, topic):
             trigger_loading(user_id, 5)
-            try:
-                line_bot_api.push_message(
-                    user_id,
-                    TextSendMessage(
-                        text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือกดปุ่มแปลพระไตรปิฎกด้านล่างได้เลยครับ", 
-                        quick_reply=get_quick_reply_menu()
-                    )
-                )
-            except Exception as e:
-                print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
+            msg = TextSendMessage(
+                text="ศิษย์พี่ได้ใช้สิทธิ์ดูดวงหัวข้อนี้ในวันนี้ไปแล้วครับ โปรดเลือกดูหัวข้ออื่น หรือกดปุ่มแปลพระไตรปิฎกด้านล่างได้เลยครับ", 
+                quick_reply=get_quick_reply_menu()
+            )
+            send_line_reply(reply_token, user_id, msg)
             return
 
     fin_event = start_loading_animation(user_id)
@@ -342,13 +291,11 @@ def async_process_and_push(user_id, user_msg):
 
         reply_text = generate_ai_response(dynamic_instruction, user_msg)
         quick_reply = get_quick_reply_menu()
-        
-        line_bot_api.push_message(
-            user_id, 
-            TextSendMessage(text=reply_text, quick_reply=quick_reply)
-        )
+        msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
+        send_line_reply(reply_token, user_id, msg)
+
     except Exception as e:
-        print(f"--- DEBUG Push Error: {e} ---", flush=True)
+        print(f"--- DEBUG Process Error: {e} ---", flush=True)
     finally:
         fin_event.set()
 
@@ -415,11 +362,13 @@ def translate_pali_word():
 def handle_message(event):
     user_msg = event.message.text.strip()
     user_id = event.source.user_id
-    threading.Thread(target=async_process_and_push, args=(user_id, user_msg)).start()
+    reply_token = event.reply_token
+    threading.Thread(target=async_process_and_reply, args=(reply_token, user_id, user_msg)).start()
 
 @handler.add(MessageEvent, message=ImageMessage)
 def handle_image(event):
     user_id = event.source.user_id
+    reply_token = event.reply_token
     fin_event = start_loading_animation(user_id)
     try:
         message_content = line_bot_api.get_message_content(event.message.id)
@@ -432,10 +381,8 @@ def handle_image(event):
         fin_event.set()
     
     quick_reply = get_quick_reply_menu()
-    line_bot_api.reply_message(
-        event.reply_token, 
-        TextSendMessage(text=reply_text, quick_reply=quick_reply)
-    )
+    msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
+    send_line_reply(reply_token, user_id, msg)
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))

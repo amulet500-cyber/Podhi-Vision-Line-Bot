@@ -10,7 +10,8 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage, 
-    ImageMessage, QuickReply, QuickReplyButton, MessageAction, URIAction
+    ImageMessage, QuickReply, QuickReplyButton, MessageAction, URIAction,
+    FlexSendMessage
 )
 import google.generativeai as genai
 from openai import OpenAI
@@ -18,7 +19,6 @@ from PIL import Image
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
-# ดึงค่า Keys และ LIFF URL จาก Environment Variables
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
@@ -26,7 +26,6 @@ LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# รายชื่อโมเดลฟรีจาก OpenRouter (เน้นความเร็ว)
 FREE_MODELS = [
     "google/gemini-2.0-flash-lite-001:free",
     "meta-llama/llama-3.3-70b-instruct:free",
@@ -34,16 +33,14 @@ FREE_MODELS = [
     "mistralai/mistral-7b-instruct:free"
 ]
 
-# System Instruction ปรับให้ตอบได้ทุกเรื่องแบบผู้ช่วย AI
 SYSTEM_INSTRUCTION = (
     "คุณคือ 'ศิษย์น้อง' ผู้ช่วย AI ประจำระบบ 'โพธิ Vision'\n"
     "หน้าที่หลักของคุณคือ:\n"
-    "1. ตอบคำถาม ให้คำปรึกษา เขียนโค้ด แปลภาษา วิเคราะห์ข้อมูล และทำนายดวงชะตาพุทธธรรม/ชาดก ได้ทุกเรื่องตามที่ผู้ใช้ถาม\n"
+    "1. ตอบคำถาม ให้คำปรึกษา เขียนโค้ด แปลภาษา และทำนายดวงชะตาพุทธธรรม/ชาดก ได้ทุกเรื่องตามที่ผู้ใช้ถาม\n"
     "2. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ ด้วยความนอบน้อมและมีจิตเมตตา\n"
     "3. ภาษาที่ใช้: กระชับ ชัดเจน สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์แปลกปลอม"
 )
 
-# ตั้งค่าฐานข้อมูล SQLite สำหรับจำกัดสิทธิ์ดูดวงรายวัน
 def init_db():
     conn = sqlite3.connect('bot_data.db')
     cursor = conn.cursor()
@@ -61,7 +58,6 @@ def init_db():
 init_db()
 
 def get_thailand_today():
-    """ดึงวันที่ปัจจุบัน เวลาประเทศไทย (UTC+7)"""
     tz_th = timezone(timedelta(hours=7))
     return datetime.now(tz_th).strftime('%Y-%m-%d')
 
@@ -85,7 +81,7 @@ def check_topic_limit(user_id, topic):
     return True
 
 def get_quick_reply_menu():
-    """สร้าง Quick Reply แบบ Label ปุ่มลอยด้านล่าง สะดวกไม่บังหน้าจอ"""
+    """ ปรับ Label ทุกปุ่มให้ยาวไม่เกิน 20 ตัวอักษรตามเกณฑ์ LINE """
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
@@ -93,9 +89,46 @@ def get_quick_reply_menu():
         QuickReplyButton(action=MessageAction(label="❤️ ความรัก", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
         QuickReplyButton(action=MessageAction(label="🛡️ สุขภาพ", text="ขอคำทำนายสุขภาพจากไพ่ดาบ")),
         QuickReplyButton(action=MessageAction(label="⚔️ อุปสรรค", text="ขอคำทำนายอุปสรรคจากไพ่ดาบ")),
-        QuickReplyButton(action=MessageAction(label="✍️ พิมพ์ถามได้ทุกเรื่อง", text="ขอคำปรึกษา")),
-        QuickReplyButton(action=URIAction(label="📖 เณรZenAiแปลพระไตรปิฏก", uri=LIFF_URL))
+        QuickReplyButton(action=MessageAction(label="✍️ ถามได้ทุกเรื่อง", text="ขอคำปรึกษา")),
+        QuickReplyButton(action=URIAction(label="📖 แปลพระไตรปิฎก", uri=LIFF_URL))
     ])
+
+def create_carousel_menu():
+    cards_data = [
+        {"title": "🔮 ดวงวันนี้", "sub": "สุ่มชาดก 547 ชาติ", "btn": "สุ่มดวงวันนี้", "text": "ขอคำทำนายดวงวันนี้จากชาดก", "color": "#1DB446"},
+        {"title": "💼 การงาน", "sub": "ทำนายด้วยไพ่ไม้เท้า", "btn": "เปิดไพ่การงาน", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า", "color": "#2A5298"},
+        {"title": "💰 การเงิน", "sub": "ทำนายด้วยไพ่เหรียญ", "btn": "เปิดไพ่การเงิน", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ", "color": "#E67E22"},
+        {"title": "❤️ ความรัก", "sub": "ทำนายด้วยไพ่ถ้วย", "btn": "เปิดไพ่ความรัก", "text": "ขอคำทำนายความรักจากไพ่ถ้วย", "color": "#E91E63"},
+        {"title": "🛡️ สุขภาพ", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่สุขภาพ", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ", "color": "#8E44AD"},
+        {"title": "⚔️ อุปสรรค", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่อุปสรรค", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ", "color": "#C0392B"},
+        {"title": "📖 แปลบาลี", "sub": "เณรZenAiแปลพระไตรปิฎก", "btn": "เปิดแอป LIFF", "uri": LIFF_URL, "color": "#06C755"}
+    ]
+
+    bubbles = []
+    for c in cards_data:
+        action = {"type": "uri", "label": c["btn"], "uri": c["uri"]} if "uri" in c else {"type": "message", "label": c["btn"], "text": c["text"]}
+        bubble = {
+            "type": "bubble",
+            "size": "micro",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": c["title"], "weight": "bold", "size": "sm", "color": c["color"]},
+                    {"type": "text", "text": c["sub"], "size": "xs", "color": "#777777", "wrap": True, "margin": "xs"}
+                ]
+            },
+            "footer": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "button", "style": "primary", "color": c["color"], "height": "sm", "action": action}
+                ]
+            }
+        }
+        bubbles.append(bubble)
+
+    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์", contents={"type": "carousel", "contents": bubbles})
 
 def trigger_loading(user_id, seconds=30):
     try:
@@ -118,9 +151,9 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
             prompt = user_msg or "ช่วยวิเคราะห์รูปภาพนี้ในมุมมองธรรมะ..."
-            response = model.generate_content([prompt, img], request_options={"timeout": 10})
+            response = model.generate_content([prompt, img], request_options={"timeout": 8})
         else:
-            response = model.generate_content(user_msg, request_options={"timeout": 10})
+            response = model.generate_content(user_msg, request_options={"timeout": 8})
         if response and response.text:
             return response.text.strip()
     except Exception as e:
@@ -133,14 +166,14 @@ def ask_openrouter(system_instruction, user_msg):
     client = OpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
-        default_headers={"HTTP-Referer": "https://podhi-vision-line-bot.onrender.com", "X-Title": "Podhi Vision Bot"}
+        default_headers={"HTTP-Referer": "https://podhi-vision-line-bot-1.onrender.com", "X-Title": "Podhi Vision Bot"}
     )
     for model_name in FREE_MODELS:
         try:
             response = client.chat.completions.create(
                 model=model_name,
                 messages=[{"role": "system", "content": system_instruction}, {"role": "user", "content": user_msg}],
-                timeout=7
+                timeout=6
             )
             if response and response.choices:
                 text = response.choices[0].message.content
@@ -156,10 +189,9 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     if not image_bytes:
         res = ask_openrouter(system_instruction, user_msg)
         if res: return res
-    return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบประมวลผลปลายทางขัดข้องชั่วคราว โปรดลองถามใหม่อีกครั้งนะครับ"
+    return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบ AI ปลายทางตอบสนองชั่วคราว โปรดลองถามใหม่อีกครั้งนะครับ"
 
 def send_line_reply(reply_token, user_id, message_obj):
-    """ส่งตอบกลับด้วย reply_token หาก Token หมดอายุ ให้สลับส่ง push_message อัตโนมัติ"""
     try:
         line_bot_api.reply_message(reply_token, message_obj)
     except Exception as e:
@@ -170,9 +202,14 @@ def send_line_reply(reply_token, user_id, message_obj):
             print(f"--- DEBUG Push Failed: {pe} ---", flush=True)
 
 def async_process_and_reply(reply_token, user_id, user_msg):
+    menu_triggers = ["เมนู", "เริ่มต้น", "สวัสดี", "หวัดดี", "help", "menu", "ศิษย์น้อง"]
+    if any(k in user_msg.lower() for k in menu_triggers) and not any(k in user_msg for k in ["ชาดก", "ไพ่", "ทำนาย", "ดวง", "แปล"]):
+        carousel_card = create_carousel_menu()
+        send_line_reply(reply_token, user_id, carousel_card)
+        return
+
     trigger_loading(user_id, 30)
 
-    # ตรวจสอบการกดดูดวงเฉพาะหัวข้อเพื่อเช็คสิทธิ์รายวัน
     topic = None
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         topic = "jataka"
@@ -187,7 +224,6 @@ def async_process_and_reply(reply_token, user_id, user_msg):
     elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
         topic = "obstacle"
 
-    # ถ้าตรงกับหัวข้อดูดวง 6 เมนูหลัก ให้เช็คจำกัดสิทธิ์รายวัน
     if topic:
         if not check_topic_limit(user_id, topic):
             msg = TextSendMessage(
@@ -197,8 +233,6 @@ def async_process_and_reply(reply_token, user_id, user_msg):
             send_line_reply(reply_token, user_id, msg)
             return
 
-    # กำหนด Prompt สำหรับส่งให้ AI
-    dynamic_instruction = SYSTEM_INSTRUCTION
     ai_prompt = user_msg
 
     if topic == "jataka":
@@ -229,13 +263,10 @@ def async_process_and_reply(reply_token, user_id, user_msg):
         card_num = random.randint(1, 10)
         ai_prompt = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง'"
 
-    # หากไม่ใช่ 6 หัวข้อดูดวง (topic = None) ระบบจะใช้ข้อความ ai_prompt ดั้งเดิมของผู้ใช้ และส่งให้ AI ตอบได้ทุกเรื่องทันที
-    reply_text = generate_ai_response(dynamic_instruction, ai_prompt)
+    reply_text = generate_ai_response(SYSTEM_INSTRUCTION, ai_prompt)
     quick_reply = get_quick_reply_menu()
     msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
     send_line_reply(reply_token, user_id, msg)
-
-# ==================== ROUTE หน้าเว็บ ====================
 
 @app.route("/", methods=['GET'])
 @app.route("/jataka", methods=['GET'])
@@ -252,8 +283,6 @@ def pali_page():
         return render_template('pali/index.html')
     except Exception:
         return "Pali Translator System is Running!", 200
-
-# ==================== ROUTE API & LINE BOT ====================
 
 @app.route("/callback", methods=['POST'])
 def callback():

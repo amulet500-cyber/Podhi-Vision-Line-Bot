@@ -14,7 +14,6 @@ from linebot.models import (
     FlexSendMessage
 )
 import google.generativeai as genai
-from openai import OpenAI
 from PIL import Image
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -81,7 +80,6 @@ def check_topic_limit(user_id, topic):
     return True
 
 def get_quick_reply_menu():
-    """ ปรับ Label ทุกปุ่มให้ยาวไม่เกิน 20 ตัวอักษรตามเกณฑ์ LINE """
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
@@ -144,58 +142,80 @@ def trigger_loading(user_id, seconds=30):
 
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
-    if not api_key: return None
+    if not api_key:
+        print("--- DEBUG Gemini: GEMINI_API_KEY Missing ---", flush=True)
+        return None
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=system_instruction)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        full_prompt = f"{system_instruction}\n\nคำถามจากศิษย์พี่: {user_msg}"
         if image_bytes:
             img = Image.open(io.BytesIO(image_bytes))
-            prompt = user_msg or "ช่วยวิเคราะห์รูปภาพนี้ในมุมมองธรรมะ..."
-            response = model.generate_content([prompt, img], request_options={"timeout": 8})
+            response = model.generate_content([full_prompt, img])
         else:
-            response = model.generate_content(user_msg, request_options={"timeout": 8})
+            response = model.generate_content(full_prompt)
         if response and response.text:
             return response.text.strip()
     except Exception as e:
-        print(f"--- DEBUG Gemini Error: {e} ---", flush=True)
+        print(f"--- DEBUG Gemini Exception: {e} ---", flush=True)
     return None
 
 def ask_openrouter(system_instruction, user_msg):
     api_key = os.getenv('OPENROUTER_API_KEY')
-    if not api_key: return None
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key,
-        default_headers={"HTTP-Referer": "https://podhi-vision-line-bot-1.onrender.com", "X-Title": "Podhi Vision Bot"}
-    )
+    if not api_key:
+        print("--- DEBUG OpenRouter: OPENROUTER_API_KEY Missing ---", flush=True)
+        return None
+    
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://podhi-vision-line-bot-1.onrender.com",
+        "X-Title": "Podhi Vision Bot"
+    }
+
     for model_name in FREE_MODELS:
         try:
-            response = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "system", "content": system_instruction}, {"role": "user", "content": user_msg}],
-                timeout=6
-            )
-            if response and response.choices:
-                text = response.choices[0].message.content
-                if text: return text.strip()
+            payload = {
+                "model": model_name,
+                "messages": [
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": user_msg}
+                ]
+            }
+            res = requests.post(url, headers=headers, json=payload, timeout=12)
+            if res.status_code == 200:
+                data = res.json()
+                text = data['choices'][0]['message']['content']
+                if text:
+                    print(f"--- SUCCESS OpenRouter Model Used: {model_name} ---", flush=True)
+                    return text.strip()
+            else:
+                print(f"--- DEBUG OpenRouter ({model_name}) Status: {res.status_code} ---", flush=True)
         except Exception as e:
-            print(f"--- DEBUG OpenRouter ({model_name}) Error: {e} ---", flush=True)
+            print(f"--- DEBUG OpenRouter ({model_name}) Exception: {e} ---", flush=True)
             continue
     return None
 
 def generate_ai_response(system_instruction, user_msg, image_bytes=None):
+    # 1. พยายามเรียก Gemini (ตัวหลัก)
     res = ask_gemini(system_instruction, user_msg, image_bytes)
-    if res: return res
+    if res: 
+        return res
+
+    # 2. ถ้า Gemini ล้มเหลว ให้เรียก OpenRouter (ตัวสำรอง)
     if not image_bytes:
         res = ask_openrouter(system_instruction, user_msg)
-        if res: return res
+        if res: 
+            return res
+
     return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบ AI ปลายทางตอบสนองชั่วคราว โปรดลองถามใหม่อีกครั้งนะครับ"
 
 def send_line_reply(reply_token, user_id, message_obj):
     try:
         line_bot_api.reply_message(reply_token, message_obj)
     except Exception as e:
-        print(f"--- DEBUG Reply Expired/Failed, Push fallback: {e} ---", flush=True)
+        print(f"--- DEBUG Reply Failed, Push fallback: {e} ---", flush=True)
         try:
             line_bot_api.push_message(user_id, message_obj)
         except Exception as pe:

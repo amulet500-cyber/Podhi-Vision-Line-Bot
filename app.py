@@ -35,7 +35,7 @@ FREE_MODELS = [
 SYSTEM_INSTRUCTION = (
     "คุณคือ 'ศิษย์น้อง' ผู้ช่วย AI และหมอดูพุทธธรรมประจำระบบ 'โพธิ Vision'\n"
     "หน้าที่หลักของคุณคือ:\n"
-    "1. ให้คำปรึกษา ทำนายดวงชะตา นำเสนอหลักธรรมะ ชาดก 547 ชาติ และไพ่ทาโรต์ (เหรียญ, ไม้เท้า, ถ้วย, ดาบ) ด้วยความลึกซึ้ง แม่นยำ และมีจิตเมตตา\n"
+    "1. ให้คำปรึกษา ทำนายดวงชะตา นำเสนอหลักธรรมะ ชาดก 547 ชาติ ไพ่ทาโรต์ และคำปรึกษาชีวิตทุกเรื่องด้วยความลึกซึ้ง แม่นยำ และมีจิตเมตตา\n"
     "2. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ\n"
     "3. ภาษาที่ใช้: กระชับ สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์หรืออักขระที่แปลกปลอม"
 )
@@ -82,18 +82,19 @@ def check_topic_limit(user_id, topic):
     return True # ยังไม่เคยใช้สิทธิ์ของหัวข้อนี้ในวันนี้ อนุญาตให้ทำนายได้
 
 def get_quick_reply_menu():
-    """สร้าง Quick Reply 6 ปุ่มเมนูหลัก"""
+    """สร้าง Quick Reply 7 ปุ่มเมนูหลัก"""
     return QuickReply(items=[
         QuickReplyButton(action=MessageAction(label="🔮 ดวงวันนี้", text="ขอคำทำนายดวงวันนี้จากชาดก")),
         QuickReplyButton(action=MessageAction(label="💼 การงาน", text="ขอคำทำนายการงานจากไพ่ไม้เท้า")),
         QuickReplyButton(action=MessageAction(label="💰 การเงิน", text="ขอคำทำนายการเงินจากไพ่เหรียญ")),
         QuickReplyButton(action=MessageAction(label="❤️ ความรัก", text="ขอคำทำนายความรักจากไพ่ถ้วย")),
         QuickReplyButton(action=MessageAction(label="🛡️ สุขภาพ", text="ขอคำทำนายสุขภาพจากไพ่ดาบ")),
-        QuickReplyButton(action=MessageAction(label="⚔️ อุปสรรค", text="ขอคำทำนายอุปสรรคจากไพ่ดาบ"))
+        QuickReplyButton(action=MessageAction(label="⚔️ อุปสรรค", text="ขอคำทำนายอุปสรรคจากไพ่ดาบ")),
+        QuickReplyButton(action=MessageAction(label="✍️ เรื่องอื่นๆ", text="ขอคำทำนายเรื่องอื่นๆ"))
     ])
 
 def create_menu_flex_card():
-    """สร้าง Flex Message เมนูหลัก 6 ปุ่ม"""
+    """สร้าง Flex Message เมนูหลัก 7 ปุ่ม"""
     flex_contents = {
         "type": "bubble",
         "hero": {
@@ -116,7 +117,7 @@ def create_menu_flex_card():
                 },
                 {
                     "type": "text",
-                    "text": "เลือกหัวข้อคำทำนายที่ศิษย์พี่ต้องการได้เลยครับ (ดูได้ทุกหัวข้อ หัวข้อละ 1 ครั้งต่อวัน)",
+                    "text": "เลือกหัวข้อ หรือพิมพ์เรื่องที่ต้องการดูดวงเข้ามาได้เลยครับ",
                     "wrap": True,
                     "color": "#666666",
                     "size": "sm",
@@ -159,6 +160,11 @@ def create_menu_flex_card():
                     "type": "button",
                     "style": "secondary",
                     "action": {"type": "message", "label": "⚔️ อุปสรรค (ดาบ)", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ"}
+                },
+                {
+                    "type": "button",
+                    "style": "secondary",
+                    "action": {"type": "message", "label": "✍️ เรื่องอื่นๆ (พิมพ์เรื่องที่ต้องการ)", "text": "ขอคำทำนายเรื่องอื่นๆ"}
                 }
             ]
         }
@@ -183,7 +189,6 @@ def start_loading_animation(user_id):
     trigger_loading(user_id, 60)
     
     def second_wave():
-        # หากส่งข้อความเสร็จแล้ว (is_finished ถูกตั้งค่า) จะไม่สั่งเปิดหลอดเวลารอบสอง
         if not is_finished.is_set():
             trigger_loading(user_id, 60)
             
@@ -239,7 +244,7 @@ def generate_ai_response(system_instruction, user_msg, image_bytes=None):
     return "ขออภัยครับศิษย์พี่ ขณะนี้ศิษย์น้องไม่สามารถประมวลผลได้ชั่วคราว โปรดลองใหม่อีกครั้งนะครับ"
 
 def async_process_and_push(user_id, user_msg):
-    # คำสั่งเรียกดูเมนูหลัก (ตอบทันที ใช้หลอดเวลาสั้นๆ เดี่ยวๆ)
+    # คำสั่งเรียกดูเมนูหลัก
     trigger_keywords = ["เมนู", "คำทำนาย", "เริ่มต้น", "สวัสดี", "ดวง"]
     if user_msg in trigger_keywords or any(k in user_msg for k in ["เมนู", "เริ่มต้น"]):
         trigger_loading(user_id, 5)
@@ -250,7 +255,22 @@ def async_process_and_push(user_id, user_msg):
         except Exception as e:
             print(f"--- DEBUG Flex Push Error: {e} ---", flush=True)
 
-    # ตรวจสอบและแยกหัวข้อเพื่อเช็คสิทธิ์รายวันแบบแยกหัวข้ออิสระต่อกัน
+    # คำสั่งกดปุ่มเรื่องอื่นๆ เพื่อแนะนำให้พิมพ์ข้อความเข้ามา
+    if user_msg in ["ขอคำทำนายเรื่องอื่นๆ", "เรื่องอื่นๆ"]:
+        trigger_loading(user_id, 3)
+        try:
+            line_bot_api.push_message(
+                user_id,
+                TextSendMessage(
+                    text="ศิษย์พี่ต้องการดูดวงหรือขอคำปรึกษาธรรมะในเรื่องใด สามารถพิมพ์ข้อความรายละเอียดส่งมาให้ศิษย์น้องได้เลยครับ 🙏",
+                    quick_reply=get_quick_reply_menu()
+                )
+            )
+            return
+        except Exception as e:
+            print(f"--- DEBUG Push Error: {e} ---", flush=True)
+
+    # ตรวจสอบและแยกหัวข้อเฉพาะ 6 เมนูหลักเพื่อจำกัดสิทธิ์
     topic = None
     if "ชาดก" in user_msg or "ดวงวันนี้" in user_msg:
         topic = "jataka"
@@ -265,9 +285,9 @@ def async_process_and_push(user_id, user_msg):
     elif "อุปสรรค" in user_msg or "ดาบ" in user_msg:
         topic = "obstacle"
 
+    # หากตรงกับ 6 เมนูหลัก ให้เช็คจำกัดสิทธิ์รายวัน
     if topic:
         if not check_topic_limit(user_id, topic):
-            # กรณีใช้สิทธิ์ไปแล้ว ตอบกลับทันที ใช้หลอดเวลาสั้นๆ เดี่ยวๆ (เช่น 5 วินาที)
             trigger_loading(user_id, 5)
             try:
                 line_bot_api.push_message(
@@ -281,7 +301,7 @@ def async_process_and_push(user_id, user_msg):
                 print(f"--- DEBUG Limit Push Error: {e} ---", flush=True)
             return
 
-    # เริ่มต้นเปิดใช้งานหลอดเวลาคู่ และรับตัวสัญญาณควบคุม (is_finished)
+    # เริ่มเปิดหลอดเวลาสำหรับการทำนาย
     fin_event = start_loading_animation(user_id)
 
     try:
@@ -309,7 +329,7 @@ def async_process_and_push(user_id, user_msg):
             user_msg = f"สุ่มไพ่ถ้วย 1 ใบจากสำรับ 1-10 (เช่น ไพ่ถ้วยใบที่ {card_num}) ทำนายดวงชะตาด้าน 'ความรักและความสัมพันธ์' ด้วยความซาบซึ้งและเข้าใจจิตใจมนุษย์"
         elif topic == "health":
             card_num = random.randint(1, 10)
-            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูแลรักษากายใจในมุมมองพุทธธรรม"
+            user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'สุขภาพและโรคภัยไข้เจ็บทางร่างกาย' พร้อมวิธีตั้งสติดูดูแลรักษากายใจในมุมมองพุทธธรรม"
         elif topic == "obstacle":
             card_num = random.randint(1, 10)
             user_msg = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง' พร้อมวิธีตั้งสติฟันฝ่าอุปสรรคด้วยปัญญา"
@@ -324,7 +344,6 @@ def async_process_and_push(user_id, user_msg):
     except Exception as e:
         print(f"--- DEBUG Push Error: {e} ---", flush=True)
     finally:
-        # สั่งแจ้งเตือนทันทีว่ากระบวนการทำงานเสร็จสิ้นแล้ว ห้ามเปิดหลอดเวลารอบสองเด็ดขาด
         fin_event.set()
 
 @app.route("/", methods=['GET'])
@@ -359,7 +378,7 @@ def handle_image(event):
     except Exception as e:
         reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับศิษย์พี่"
     finally:
-        fin_event.set() # ปิดกั้นหลอดเวลารอบสองทันทีเมื่อประมวลผลรูปภาพเสร็จ
+        fin_event.set()
     
     quick_reply = get_quick_reply_menu()
     line_bot_api.reply_message(

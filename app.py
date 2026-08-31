@@ -320,15 +320,20 @@ def pali_page():
     except Exception:
         return "Pali Translator System is Running!", 200
 
-# Route เสิร์ฟไฟล์พระไตรปิฎก .txt ทุกกรณี (รองรับทั้ง /b1.txt, /pali/b1.txt และ /static/pali/b1.txt)
-@app.route('/<filename>.txt', methods=['GET'])
-@app.route('/pali/<filename>', methods=['GET'])
-@app.route('/static/pali/<filename>', methods=['GET'])
-def serve_pali_file(filename):
-    if not filename.endswith('.txt'):
-        filename = f"{filename}.txt"
+# Route สำหรับเสิร์ฟไฟล์ static ของบาลี (css, js, icon, manifest) เมื่อถูกเรียกจาก path /pali/... หรือ /static/pali/...
+@app.route('/pali/<path:filename>', methods=['GET'])
+@app.route('/static/pali/<path:filename>', methods=['GET'])
+def serve_pali_assets(filename):
     try:
         return send_from_directory('static/pali', filename)
+    except Exception:
+        return jsonify({'error': 'File not found'}), 404
+
+# Route เสิร์ฟไฟล์ .txt จาก Root Path
+@app.route('/<filename>.txt', methods=['GET'])
+def serve_txt_file(filename):
+    try:
+        return send_from_directory('static/pali', f"{filename}.txt")
     except Exception:
         return jsonify({'error': 'File not found'}), 404
 

@@ -25,10 +25,20 @@ LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-FREE_MODELS = [
+# รายชื่อโมเดล Gemini สำรอง
+GEMINI_MODELS = [
+    "gemini-1.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-pro",
+    "gemini-1.5-flash-latest"
+]
+
+# รายชื่อโมเดล OpenRouter ฟรี สำรอง
+OPENROUTER_MODELS = [
     "google/gemini-2.0-flash-lite-001:free",
     "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen-2.5-7b-instruct:free"
+    "qwen/qwen-2.5-7b-instruct:free",
+    "deepseek/deepseek-r1:free"
 ]
 
 SYSTEM_INSTRUCTION = (
@@ -139,43 +149,52 @@ def trigger_loading(user_id, seconds=30):
     except Exception as e:
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
 
-# 1. Gemini AI Official SDK
+# 1. Gemini SDK พร้อมระบบวนลูปโมเดล
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        print("--- DEBUG Gemini API Key Missing ---", flush=True)
+        print("--- DEBUG: GEMINI_API_KEY Missing in Render Environment ---", flush=True)
         return None
-    try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=system_instruction
-        )
-        if image_bytes:
-            img = Image.open(io.BytesIO(image_bytes))
-            prompt = user_msg or "วิเคราะห์รูปภาพนี้..."
-            response = model.generate_content([prompt, img])
-        else:
-            response = model.generate_content(user_msg)
-        if response and response.text:
-            return response.text.strip()
-    except Exception as e:
-        print(f"--- DEBUG Gemini Exception: {e} ---", flush=True)
+    
+    genai.configure(api_key=api_key)
+    
+    for m_name in GEMINI_MODELS:
+        try:
+            model = genai.GenerativeModel(
+                model_name=m_name,
+                system_instruction=system_instruction
+            )
+            if image_bytes:
+                img = Image.open(io.BytesIO(image_bytes))
+                prompt = user_msg or "วิเคราะห์รูปภาพนี้..."
+                response = model.generate_content([prompt, img])
+            else:
+                response = model.generate_content(user_msg)
+            
+            if response and response.text:
+                print(f"--- DEBUG: Gemini Success with model {m_name} ---", flush=True)
+                return response.text.strip()
+        except Exception as e:
+            print(f"--- DEBUG Gemini Model {m_name} Failed: {e} ---", flush=True)
+            continue
     return None
 
-# 2. OpenRouter API Backup
+# 2. OpenRouter API พร้อม Header ตามข้อกำหนด
 def ask_openrouter(system_instruction, user_msg):
     api_key = os.getenv('OPENROUTER_API_KEY')
     if not api_key:
+        print("--- DEBUG: OPENROUTER_API_KEY Missing in Render Environment ---", flush=True)
         return None
     
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
+        "HTTP-Referer": "https://podhivision.onrender.com",
+        "X-Title": "PodhiVisionBot",
         "Content-Type": "application/json"
     }
 
-    for model_name in FREE_MODELS:
+    for model_name in OPENROUTER_MODELS:
         try:
             payload = {
                 "model": model_name,
@@ -189,36 +208,29 @@ def ask_openrouter(system_instruction, user_msg):
                 data = res.json()
                 text = data['choices'][0]['message']['content']
                 if text:
+                    print(f"--- DEBUG: OpenRouter Success with model {model_name} ---", flush=True)
                     return text.strip()
+            else:
+                print(f"--- DEBUG OpenRouter {model_name} HTTP {res.status_code}: {res.text} ---", flush=True)
         except Exception as e:
             print(f"--- DEBUG OpenRouter Error: {e} ---", flush=True)
             continue
     return None
 
-# 3. Emergency Rule Fallback (ถ้า AI ทั้งหมดขัดข้อง)
-def ask_rule_fallback(user_msg):
-    msg = user_msg.lower()
-    if "หมากัดแมว" in msg or "แมวกัดหนู" in msg:
-        return "โดยสัญชาตญาณสัตว์นักล่า สัตว์ใหญ่กว่ามักจะไล่สัตว์เล็กกว่าครับ แต่หากได้รับการเลี้ยงดูคู่กันด้วยความเมตตาตั้งแต่เล็ก สัตว์ต่างสายพันธุ์ก็สามารถเป็นมิตรกันได้ครับศิษย์พี่"
-    elif "สวัสดี" in msg or "หวัดดี" in msg:
-        return "เจริญพร / สวัสดีครับศิษย์พี่ มีเรื่องใดให้ศิษย์น้องช่วยรับใช้ ปรปรึกษาธรรมะ หรือทำนายดวงชะตา สอบถามมาได้เลยครับ"
-    else:
-        return f"ศิษย์น้องได้รับคำถาม '{user_msg}' เรียบร้อยแล้วครับ ศิษย์พี่สามารถเลือกกดเมนูด้านล่างเพื่อทำนายดวง หรือสอบถามเรื่องอื่นๆ เพิ่มเติมได้เลยครับ"
-
 def generate_ai_response(system_instruction, user_msg, image_bytes=None):
-    # ลอง Gemini
+    # Try Gemini
     res = ask_gemini(system_instruction, user_msg, image_bytes)
     if res:
         return res
 
-    # ถ้า Gemini ไม่ตอบ ลอง OpenRouter
+    # Try OpenRouter
     if not image_bytes:
         res = ask_openrouter(system_instruction, user_msg)
         if res:
             return res
 
-    # ถ้า AI ทั้งหมดขัดข้อง ตอบด้วย Rule Fallback
-    return ask_rule_fallback(user_msg)
+    # If both fail
+    return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบ AI ปลายทางกำลังปรับปรุงระบบชั่วคราว โปรดลองถามใหม่อีกครั้งในอีกสักครู่นะครับ"
 
 def send_line_reply(reply_token, user_id, message_obj):
     try:

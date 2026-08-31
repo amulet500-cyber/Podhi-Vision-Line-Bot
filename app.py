@@ -21,7 +21,7 @@ LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 
 # แก้ไขจุดนี้: ใส่ LIFF URL จริงเป็นค่าเริ่มต้น ป้องกัน 404 กรณี Render ไม่โหลดค่า Env
-LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/2011300777-uomwb1jN')
+LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/2011300777-uomwbIjN')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)

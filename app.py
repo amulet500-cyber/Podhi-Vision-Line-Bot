@@ -20,7 +20,7 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
 
-# แก้ไขจุดนี้: ใส่ LIFF URL จริงเป็นค่าเริ่มต้น ป้องกัน 404 กรณี Render ไม่โหลดค่า Env
+# LIFF URL สำหรับเปิดมินิแอพแปลพระไตรปิฎก
 LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/2011300777-uomwbIjN')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
@@ -348,7 +348,7 @@ def translate_pali_word():
     
     pali_instruction = (
         "คุณคือผู้เชี่ยวชาญด้านภาษาบาลี หน้าที่ของคุณคือแปลคำศัพท์ภาษาบาลีเป็นภาษาไทย "
-        "ตอบให้กระชับ ชัดเจน ตรงประเด็น ความหมายสั้นๆ ไม่ต้องมีคำเกริ่นนำ"
+        "โดยจัดเรียงคำแปลตามโครงสร้างประโยคภาษาไทยเป็นหลัก คำตอบต้องกระชับ ชัดเจน ตรงประเด็น ความหมายสั้นๆ ไม่ต้องมีคำเกริ่นนำ"
     )
     prompt = f"แปลคำศัพท์ภาษาบาลีคำว่า '{word}' เป็นภาษาไทย ขอความหมายกระชับ ชัดเจน"
     result = generate_ai_response(pali_instruction, prompt)

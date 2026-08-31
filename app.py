@@ -6,7 +6,7 @@ import sqlite3
 import base64
 from datetime import datetime, timezone, timedelta
 import requests
-from flask import Flask, request, jsonify, abort, render_template
+from flask import Flask, request, jsonify, abort, render_template, send_from_directory
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
@@ -319,6 +319,15 @@ def pali_page():
         return render_template('pali/index.html')
     except Exception:
         return "Pali Translator System is Running!", 200
+
+# Route เสิร์ฟไฟล์พระไตรปิฎก .txt ทั้ง Path ตรงและ Path สแตนดาร์ด
+@app.route('/pali/<filename>', methods=['GET'])
+@app.route('/static/pali/<filename>', methods=['GET'])
+def serve_pali_file(filename):
+    try:
+        return send_from_directory('static/pali', filename)
+    except Exception:
+        return jsonify({'error': 'File not found'}), 404
 
 @app.route("/callback", methods=['POST'])
 def callback():

@@ -320,10 +320,13 @@ def pali_page():
     except Exception:
         return "Pali Translator System is Running!", 200
 
-# Route เสิร์ฟไฟล์พระไตรปิฎก .txt ทั้ง Path ตรงและ Path สแตนดาร์ด
+# Route เสิร์ฟไฟล์พระไตรปิฎก .txt ทุกกรณี (รองรับทั้ง /b1.txt, /pali/b1.txt และ /static/pali/b1.txt)
+@app.route('/<filename>.txt', methods=['GET'])
 @app.route('/pali/<filename>', methods=['GET'])
 @app.route('/static/pali/<filename>', methods=['GET'])
 def serve_pali_file(filename):
+    if not filename.endswith('.txt'):
+        filename = f"{filename}.txt"
     try:
         return send_from_directory('static/pali', filename)
     except Exception:

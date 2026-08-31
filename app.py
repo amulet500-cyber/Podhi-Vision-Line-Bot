@@ -3,6 +3,7 @@ import os
 import random
 import threading
 import sqlite3
+import base64
 from datetime import datetime, timezone, timedelta
 import requests
 from flask import Flask, request, jsonify, abort, render_template
@@ -13,14 +14,14 @@ from linebot.models import (
     ImageMessage, QuickReply, QuickReplyButton, MessageAction, URIAction,
     FlexSendMessage
 )
-import google.generativeai as genai
-from PIL import Image
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv('LINE_CHANNEL_ACCESS_TOKEN')
 LINE_CHANNEL_SECRET = os.getenv('LINE_CHANNEL_SECRET')
-LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
+
+# แก้ไขจุดนี้: ใส่ LIFF URL จริงเป็นค่าเริ่มต้น ป้องกัน 404 กรณี Render ไม่โหลดค่า Env
+LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/2011300777-uomwb1jN')
 
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
@@ -34,10 +35,10 @@ GEMINI_MODELS = [
 
 # รายชื่อโมเดล OpenRouter ฟรีที่ใช้งานได้จริงในปัจจุบัน
 OPENROUTER_MODELS = [
-    "openrouter/auto",
     "google/gemini-2.0-flash-exp:free",
     "meta-llama/llama-3.2-11b-vision-instruct:free",
-    "mistralai/mistral-7b-instruct:free"
+    "mistralai/mistral-7b-instruct:free",
+    "openrouter/auto"
 ]
 
 SYSTEM_INSTRUCTION = (
@@ -121,7 +122,7 @@ def create_menu_flex_card():
                 {"type": "button", "style": "secondary", "action": {"type": "message", "label": "❤️ ความรัก (ถ้วย)", "text": "ขอคำทำนายความรักจากไพ่ถ้วย"}},
                 {"type": "button", "style": "secondary", "action": {"type": "message", "label": "🛡️ สุขภาพ (ดาบ)", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ"}},
                 {"type": "button", "style": "secondary", "action": {"type": "message", "label": "⚔️ อุปสรรค (ดาบ)", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ"}},
-                {"type": "button", "style": "primary", "color": "#06C755", "action": {"type": "uri", "label": "📖 เณรZenAiแปลพระไตรปิฎก", "uri": LIFF_URL}}
+                {"type": "button", "style": "primary", "color": "#06C755", "action": {"type": "uri", "label": "📖 แปลพระไตรปิฎก", "uri": LIFF_URL}}
             ]
         }
     }
@@ -144,22 +145,40 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
     if not api_key:
         return None
     
-    genai.configure(api_key=api_key)
-    
     for m_name in GEMINI_MODELS:
-        try:
-            model = genai.GenerativeModel(model_name=m_name, system_instruction=system_instruction)
-            if image_bytes:
-                img = Image.open(io.BytesIO(image_bytes))
-                prompt = user_msg or "วิเคราะห์รูปภาพนี้..."
-                response = model.generate_content([prompt, img])
-            else:
-                response = model.generate_content(user_msg)
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{m_name}:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+        
+        parts = []
+        if user_msg:
+            parts.append({"text": user_msg})
+        if image_bytes:
+            img_b64 = base64.b64encode(image_bytes).decode('utf-8')
+            parts.append({
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": img_b64
+                }
+            })
             
-            if response and response.text:
-                return response.text.strip()
+        payload = {
+            "systemInstruction": {
+                "parts": [{"text": system_instruction}]
+            },
+            "contents": [{"parts": parts}]
+        }
+        
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=15)
+            if res.status_code == 200:
+                data = res.json()
+                text = data['candidates'][0]['content']['parts'][0]['text']
+                if text:
+                    return text.strip()
+            else:
+                print(f"--- DEBUG Gemini Model {m_name} Error ({res.status_code}): {res.text} ---", flush=True)
         except Exception as e:
-            print(f"--- DEBUG Gemini Model {m_name} Error: {e} ---", flush=True)
+            print(f"--- DEBUG Gemini Exception ({m_name}): {e} ---", flush=True)
             continue
     return None
 
@@ -171,7 +190,7 @@ def ask_openrouter(system_instruction, user_msg):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer": "https://podhivision.onrender.com",
+        "HTTP-Referer": "https://podhi-vision-line-bot-1.onrender.com",
         "X-Title": "PodhiVisionBot",
         "Content-Type": "application/json"
     }
@@ -185,14 +204,16 @@ def ask_openrouter(system_instruction, user_msg):
                     {"role": "user", "content": user_msg}
                 ]
             }
-            res = requests.post(url, headers=headers, json=payload, timeout=10)
+            res = requests.post(url, headers=headers, json=payload, timeout=12)
             if res.status_code == 200:
                 data = res.json()
                 text = data['choices'][0]['message']['content']
                 if text:
                     return text.strip()
+            else:
+                print(f"--- DEBUG OpenRouter {model_name} Error ({res.status_code}): {res.text} ---", flush=True)
         except Exception as e:
-            print(f"--- DEBUG OpenRouter {model_name} Error: {e} ---", flush=True)
+            print(f"--- DEBUG OpenRouter Exception ({model_name}): {e} ---", flush=True)
             continue
     return None
 

@@ -25,26 +25,25 @@ LIFF_URL = os.getenv('LIFF_URL', 'https://liff.line.me/YOUR_LIFF_ID')
 line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(LINE_CHANNEL_SECRET)
 
-# รายชื่อโมเดล Gemini สำรอง
+# รายชื่อโมเดล Gemini สำรองเรียงตามลำดับ
 GEMINI_MODELS = [
     "gemini-1.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-pro",
-    "gemini-1.5-flash-latest"
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-pro"
 ]
 
-# รายชื่อโมเดล OpenRouter ฟรี สำรอง
+# รายชื่อโมเดล OpenRouter ฟรีที่ใช้งานได้จริงในปัจจุบัน
 OPENROUTER_MODELS = [
-    "google/gemini-2.0-flash-lite-001:free",
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "qwen/qwen-2.5-7b-instruct:free",
-    "deepseek/deepseek-r1:free"
+    "openrouter/auto",
+    "google/gemini-2.0-flash-exp:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free",
+    "mistralai/mistral-7b-instruct:free"
 ]
 
 SYSTEM_INSTRUCTION = (
     "คุณคือ 'ศิษย์น้อง' ผู้ช่วย AI ประจำระบบ 'โพธิ Vision'\n"
     "หน้าที่หลักของคุณคือ:\n"
-    "1. ตอบคำถาม ให้คำปรึกษา เขียนโค้ด แปลภาษา และทำนายดวงชะตาพุทธธรรม/ชาดก ได้ทุกเรื่องตามที่ผู้ใช้ถาม\n"
+    "1. ตอบคำถาม ให้คำปรึกษา เขียนโค้ด แปลภาษา และทำนายดวงชะตาพุทธธรรม/ชาดก 547 ชาติ ไพ่ทาโรต์ ได้ทุกเรื่อง\n"
     "2. สรรพนามที่ใช้: แทนตัวเองว่า 'ศิษย์น้อง' และเรียกผู้ใช้ว่า 'ศิษย์พี่' เสมอ ด้วยความนอบน้อมและมีจิตเมตตา\n"
     "3. ภาษาที่ใช้: กระชับ ชัดเจน สละสลวย อ่านง่าย ไม่ใช้สัญลักษณ์แปลกปลอม"
 )
@@ -100,42 +99,33 @@ def get_quick_reply_menu():
         QuickReplyButton(action=URIAction(label="📖 แปลพระไตรปิฎก", uri=LIFF_URL))
     ])
 
-def create_carousel_menu():
-    cards_data = [
-        {"title": "🔮 ดวงวันนี้", "sub": "สุ่มชาดก 547 ชาติ", "btn": "สุ่มดวงวันนี้", "text": "ขอคำทำนายดวงวันนี้จากชาดก", "color": "#1DB446"},
-        {"title": "💼 การงาน", "sub": "ทำนายด้วยไพ่ไม้เท้า", "btn": "เปิดไพ่การงาน", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า", "color": "#2A5298"},
-        {"title": "💰 การเงิน", "sub": "ทำนายด้วยไพ่เหรียญ", "btn": "เปิดไพ่การเงิน", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ", "color": "#E67E22"},
-        {"title": "❤️ ความรัก", "sub": "ทำนายด้วยไพ่ถ้วย", "btn": "เปิดไพ่ความรัก", "text": "ขอคำทำนายความรักจากไพ่ถ้วย", "color": "#E91E63"},
-        {"title": "🛡️ สุขภาพ", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่สุขภาพ", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ", "color": "#8E44AD"},
-        {"title": "⚔️ อุปสรรค", "sub": "ทำนายด้วยไพ่ดาบ", "btn": "เปิดไพ่อุปสรรค", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ", "color": "#C0392B"},
-        {"title": "📖 แปลบาลี", "sub": "เณรZenAiแปลพระไตรปิฎก", "btn": "เปิดแอป LIFF", "uri": LIFF_URL, "color": "#06C755"}
-    ]
-
-    bubbles = []
-    for c in cards_data:
-        action = {"type": "uri", "label": c["btn"], "uri": c["uri"]} if "uri" in c else {"type": "message", "label": c["btn"], "text": c["text"]}
-        bubble = {
-            "type": "bubble",
-            "size": "micro",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {"type": "text", "text": c["title"], "weight": "bold", "size": "sm", "color": c["color"]},
-                    {"type": "text", "text": c["sub"], "size": "xs", "color": "#777777", "wrap": True, "margin": "xs"}
-                ]
-            },
-            "footer": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {"type": "button", "style": "primary", "color": c["color"], "height": "sm", "action": action}
-                ]
-            }
+def create_menu_flex_card():
+    flex_contents = {
+        "type": "bubble",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": [
+                {"type": "text", "text": "🔮 โพธิ Vision พุทธธรรมพยากรณ์", "weight": "bold", "size": "lg", "color": "#1DB446"},
+                {"type": "text", "text": "เลือกหัวข้อขอคำทำนาย หรือใช้งานแอปแปลพระไตรปิฎกด้านล่างได้เลยครับ", "wrap": True, "color": "#666666", "size": "sm", "margin": "md"}
+            ]
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "spacing": "sm",
+            "contents": [
+                {"type": "button", "style": "primary", "color": "#1DB446", "action": {"type": "message", "label": "🔮 ดวงวันนี้ (ชาดก)", "text": "ขอคำทำนายดวงวันนี้จากชาดก"}},
+                {"type": "button", "style": "secondary", "action": {"type": "message", "label": "💼 การงาน (ไม้เท้า)", "text": "ขอคำทำนายการงานจากไพ่ไม้เท้า"}},
+                {"type": "button", "style": "secondary", "action": {"type": "message", "label": "💰 การเงิน (เหรียญ)", "text": "ขอคำทำนายการเงินจากไพ่เหรียญ"}},
+                {"type": "button", "style": "secondary", "action": {"type": "message", "label": "❤️ ความรัก (ถ้วย)", "text": "ขอคำทำนายความรักจากไพ่ถ้วย"}},
+                {"type": "button", "style": "secondary", "action": {"type": "message", "label": "🛡️ สุขภาพ (ดาบ)", "text": "ขอคำทำนายสุขภาพจากไพ่ดาบ"}},
+                {"type": "button", "style": "secondary", "action": {"type": "message", "label": "⚔️ อุปสรรค (ดาบ)", "text": "ขอคำทำนายอุปสรรคจากไพ่ดาบ"}},
+                {"type": "button", "style": "primary", "color": "#06C755", "action": {"type": "uri", "label": "📖 เณรZenAiแปลพระไตรปิฎก", "uri": LIFF_URL}}
+            ]
         }
-        bubbles.append(bubble)
-
-    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์", contents={"type": "carousel", "contents": bubbles})
+    }
+    return FlexSendMessage(alt_text="🔮 เมนูพุทธธรรมพยากรณ์ & แปลพระไตรปิฎก", contents=flex_contents)
 
 def trigger_loading(user_id, seconds=30):
     try:
@@ -149,21 +139,16 @@ def trigger_loading(user_id, seconds=30):
     except Exception as e:
         print(f"--- DEBUG Loading Error: {e} ---", flush=True)
 
-# 1. Gemini SDK พร้อมระบบวนลูปโมเดล
 def ask_gemini(system_instruction, user_msg, image_bytes=None):
     api_key = os.getenv('GEMINI_API_KEY')
     if not api_key:
-        print("--- DEBUG: GEMINI_API_KEY Missing in Render Environment ---", flush=True)
         return None
     
     genai.configure(api_key=api_key)
     
     for m_name in GEMINI_MODELS:
         try:
-            model = genai.GenerativeModel(
-                model_name=m_name,
-                system_instruction=system_instruction
-            )
+            model = genai.GenerativeModel(model_name=m_name, system_instruction=system_instruction)
             if image_bytes:
                 img = Image.open(io.BytesIO(image_bytes))
                 prompt = user_msg or "วิเคราะห์รูปภาพนี้..."
@@ -172,18 +157,15 @@ def ask_gemini(system_instruction, user_msg, image_bytes=None):
                 response = model.generate_content(user_msg)
             
             if response and response.text:
-                print(f"--- DEBUG: Gemini Success with model {m_name} ---", flush=True)
                 return response.text.strip()
         except Exception as e:
-            print(f"--- DEBUG Gemini Model {m_name} Failed: {e} ---", flush=True)
+            print(f"--- DEBUG Gemini Model {m_name} Error: {e} ---", flush=True)
             continue
     return None
 
-# 2. OpenRouter API พร้อม Header ตามข้อกำหนด
 def ask_openrouter(system_instruction, user_msg):
     api_key = os.getenv('OPENROUTER_API_KEY')
     if not api_key:
-        print("--- DEBUG: OPENROUTER_API_KEY Missing in Render Environment ---", flush=True)
         return None
     
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -203,49 +185,43 @@ def ask_openrouter(system_instruction, user_msg):
                     {"role": "user", "content": user_msg}
                 ]
             }
-            res = requests.post(url, headers=headers, json=payload, timeout=8)
+            res = requests.post(url, headers=headers, json=payload, timeout=10)
             if res.status_code == 200:
                 data = res.json()
                 text = data['choices'][0]['message']['content']
                 if text:
-                    print(f"--- DEBUG: OpenRouter Success with model {model_name} ---", flush=True)
                     return text.strip()
-            else:
-                print(f"--- DEBUG OpenRouter {model_name} HTTP {res.status_code}: {res.text} ---", flush=True)
         except Exception as e:
-            print(f"--- DEBUG OpenRouter Error: {e} ---", flush=True)
+            print(f"--- DEBUG OpenRouter {model_name} Error: {e} ---", flush=True)
             continue
     return None
 
 def generate_ai_response(system_instruction, user_msg, image_bytes=None):
-    # Try Gemini
     res = ask_gemini(system_instruction, user_msg, image_bytes)
     if res:
         return res
 
-    # Try OpenRouter
     if not image_bytes:
         res = ask_openrouter(system_instruction, user_msg)
         if res:
             return res
 
-    # If both fail
     return "ขออภัยครับศิษย์พี่ ขณะนี้ระบบ AI ปลายทางกำลังปรับปรุงระบบชั่วคราว โปรดลองถามใหม่อีกครั้งในอีกสักครู่นะครับ"
 
 def send_line_reply(reply_token, user_id, message_obj):
     try:
         line_bot_api.reply_message(reply_token, message_obj)
     except Exception as e:
+        print(f"--- DEBUG Reply Error, Fallback to Push: {e} ---", flush=True)
         try:
             line_bot_api.push_message(user_id, message_obj)
-        except Exception:
-            pass
+        except Exception as e2:
+            print(f"--- DEBUG Push Failed: {e2} ---", flush=True)
 
 def async_process_and_reply(reply_token, user_id, user_msg):
-    menu_triggers = ["เมนู", "เริ่มต้น", "สวัสดีครับ", "สวัสดีค่ะ", "help", "menu"]
+    menu_triggers = ["เมนู", "เริ่มต้น", "สวัสดี", "help", "menu"]
     if user_msg.lower() in menu_triggers:
-        carousel_card = create_carousel_menu()
-        send_line_reply(reply_token, user_id, carousel_card)
+        send_line_reply(reply_token, user_id, create_menu_flex_card())
         return
 
     trigger_loading(user_id, 30)
@@ -281,7 +257,7 @@ def async_process_and_reply(reply_token, user_id, user_msg):
             f"ช่วยสุ่มและทำนายดวงชะตาจากชาดก 547 ชาติมา 1 เรื่อง (อิงจากชาดกเรื่องที่ {jataka_num}) "
             f"และขอรูปแบบการแสดงผลตามโครงสร้างนี้เป๊ะๆ:\n\n"
             f"[{jataka_num}] ชื่อชาดก\n"
-            f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น ห้ามยาวยืดเยื้อ)\n"
+            f"คำจำกัดความ : (ต้องสั้นกระชับมาก ไม่เกิน 3 คำเท่านั้น)\n"
             f"บารมีประจำชาติ : ...บารมี\n"
             f"สภาวะหลัก : (ระบุสถานการณ์หรือปัญหาที่กำลังเผชิญ)\n"
             f"ธรรมะ ทางแก้ : (เสนอแนวทางธรรมะสั้นๆ เพื่อแก้ปัญหา)\n\n"
@@ -304,8 +280,7 @@ def async_process_and_reply(reply_token, user_id, user_msg):
         ai_prompt = f"สุ่มไพ่ดาบ 1 ใบจากสำรับ 1-10 (เช่น ไพ่ดาบใบที่ {card_num}) ทำนายเจาะลึกด้าน 'อุปสรรค ปัญหาข้อขัดแย้ง'"
 
     reply_text = generate_ai_response(SYSTEM_INSTRUCTION, ai_prompt)
-    quick_reply = get_quick_reply_menu()
-    msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
+    msg = TextSendMessage(text=reply_text, quick_reply=get_quick_reply_menu())
     send_line_reply(reply_token, user_id, msg)
 
 @app.route("/", methods=['GET'])
@@ -351,7 +326,7 @@ def translate_pali_word():
         return res, 400
     
     pali_instruction = (
-        "คุณคือผู้เชี่ยวชาญด้านภาษาบาลีหน้าที่ของคุณคือแปลคำศัพท์ภาษาบาลีเป็นภาษาไทย "
+        "คุณคือผู้เชี่ยวชาญด้านภาษาบาลี หน้าที่ของคุณคือแปลคำศัพท์ภาษาบาลีเป็นภาษาไทย "
         "ตอบให้กระชับ ชัดเจน ตรงประเด็น ความหมายสั้นๆ ไม่ต้องมีคำเกริ่นนำ"
     )
     prompt = f"แปลคำศัพท์ภาษาบาลีคำว่า '{word}' เป็นภาษาไทย ขอความหมายกระชับ ชัดเจน"
@@ -376,13 +351,12 @@ def handle_image(event):
     try:
         message_content = line_bot_api.get_message_content(event.message.id)
         image_bytes = message_content.content
-        vision_instruction = SYSTEM_INSTRUCTION + "\nเพิ่มเติม: ศิษย์พี่ได้ส่งรูปภาพมา ให้ช่วยวิเคราะห์รายละเอียด วัตถุมงคล หรือสภาวะธรรมในภาพด้วยความนอบน้อม"
+        vision_instruction = SYSTEM_INSTRUCTION + "\nเพิ่มเติม: ศิษย์พี่ได้ส่งรูปภาพมา ให้ช่วยวิเคราะห์รายละเอียด วัตถุมงคล หรือสภาวะธรรมในภาพ"
         reply_text = generate_ai_response(vision_instruction, "ช่วยอธิบาย หรือวิเคราะห์สิ่งที่เห็นในภาพนี้ให้ศิษย์พี่หน่อยครับ", image_bytes)
     except Exception:
         reply_text = "เกิดข้อผิดพลาดในการประมวลผลรูปภาพครับศิษย์พี่"
     
-    quick_reply = get_quick_reply_menu()
-    msg = TextSendMessage(text=reply_text, quick_reply=quick_reply)
+    msg = TextSendMessage(text=reply_text, quick_reply=get_quick_reply_menu())
     send_line_reply(reply_token, user_id, msg)
 
 if __name__ == "__main__":
